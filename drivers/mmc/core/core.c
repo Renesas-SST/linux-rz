@@ -220,12 +220,16 @@ static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 {
 	int err;
 
+	/* Tuning only for READ operation */
+	if (!mrq->cmd || (mrq->cmd->opcode != SD_IO_RW_DIRECT) ||
+	    !(mrq->cmd->arg & 0x80000000)) {
 	/* Assumes host controller has been runtime resumed by mmc_claim_host */
-	err = mmc_retune(host);
-	if (err) {
-		mrq->cmd->error = err;
-		mmc_request_done(host, mrq);
-		return;
+		err = mmc_retune(host);
+		if (err) {
+			mrq->cmd->error = err;
+			mmc_request_done(host, mrq);
+			return;
+		}
 	}
 
 	/*
