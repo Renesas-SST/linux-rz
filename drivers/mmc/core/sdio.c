@@ -669,7 +669,7 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 	WARN_ON(!host->claimed);
 
 	/* to query card if 1.8V signalling is supported */
-	if (mmc_host_can_uhs(host))
+	if (mmc_host_can_uhs(host) && !disable_uhs_mode)
 		ocr |= R4_18V_PRESENT;
 
 try_again:
