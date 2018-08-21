@@ -2230,6 +2230,13 @@ static struct sdhci_pci_slot *sdhci_pci_probe_slot(
 	if (ret)
 		goto remove;
 
+	if (pdev->vendor == PCI_VENDOR_ID_RICOH) {
+		pr_err("give RST to dongle for RICOH SDHC\n");
+		sdhci_writel(host, 0x8, RICOH_WL_RST_REG);
+		msleep(100);
+		sdhci_writel(host, 0x0, RICOH_WL_RST_REG);
+	}
+
 	/*
 	 * Check if the chip needs a separate GPIO for card detect to wake up
 	 * from runtime suspend.  If it is not there, don't allow runtime PM.

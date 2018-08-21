@@ -344,6 +344,9 @@
  * End of controller registers.
  */
 
+/* RICOH WL reset register */
+#define RICOH_WL_RST_REG	0xF0
+
 #define SDHCI_MAX_DIV_SPEC_200	256
 #define SDHCI_MAX_DIV_SPEC_300	2046
 
