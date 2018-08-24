@@ -2863,7 +2863,7 @@ void sdhci_send_tuning(struct sdhci_host *host, u32 opcode)
 
 	/* Wait for Buffer Read Ready interrupt */
 	wait_event_timeout(host->buf_ready_int, (host->tuning_done == 1),
-			   msecs_to_jiffies(50));
+			   msecs_to_jiffies(500));
 
 }
 EXPORT_SYMBOL_GPL(sdhci_send_tuning);
