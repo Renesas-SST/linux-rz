@@ -567,7 +567,7 @@ static void sdhci_uhs2_prepare_data(struct sdhci_host *host, struct mmc_command 
 
 	sdhci_initialize_data(host, data);
 
-	sdhci_prepare_dma(host, data);
+	sdhci_prepare_dma(host, cmd);
 
 	sdhci_writew(host, data->blksz, SDHCI_UHS2_BLOCK_SIZE);
 	sdhci_writew(host, data->blocks, SDHCI_UHS2_BLOCK_COUNT);

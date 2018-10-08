@@ -266,6 +266,11 @@ static int ricoh_mmc_resume(struct sdhci_pci_chip *chip)
 }
 #endif
 
+static const struct sdhci_pci_fixes sdhci_broadcom_fpga = {
+	.quirks         = SDHCI_QUIRK_FORCE_DMA |
+			  SDHCI_QUIRK_CLOCK_BEFORE_RESET,
+	.quirks2	= SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN,
+};
 static const struct sdhci_pci_fixes sdhci_ricoh = {
 	.probe		= ricoh_probe,
 	.quirks		= SDHCI_QUIRK_32BIT_DMA_ADDR |
@@ -1960,6 +1965,7 @@ static const struct pci_device_id pci_ids[] = {
 	SDHCI_PCI_DEVICE(GLI, 9755, gl9755),
 	SDHCI_PCI_DEVICE(GLI, 9763E, gl9763e),
 	SDHCI_PCI_DEVICE(GLI, 9767, gl9767),
+	SDHCI_PCI_DEVICE(BROADCOM, FPGA, broadcom_fpga),
 	SDHCI_PCI_DEVICE_CLASS(AMD, SYSTEM_SDHCI, PCI_CLASS_MASK, amd),
 	/* Generic SD host controller */
 	{PCI_DEVICE_CLASS(SYSTEM_SDHCI, PCI_CLASS_MASK)},

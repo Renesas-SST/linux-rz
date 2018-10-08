@@ -837,7 +837,14 @@ static void sdhci_adma_table_pre(struct sdhci_host *host,
 		}
 	} else {
 		/* Add a terminating entry - nop, end, valid */
-		__sdhci_adma_write_desc(host, &desc, 0, 0, ADMA2_NOP_END_VALID);
+		if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+			__sdhci_adma_write_desc(host, &desc, 0, 0,
+					ADMA2_END |
+					ADMA2_INT |
+					ADMA2_TRAN_VALID);
+		} else {
+			__sdhci_adma_write_desc(host, &desc, 0, 0, ADMA2_NOP_END_VALID);
+		}
 	}
 }
 
@@ -1115,8 +1122,10 @@ static inline void sdhci_set_block_info(struct sdhci_host *host,
 	}
 }
 
-void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_data *data)
+void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_command *cmd)
 {
+	struct mmc_data *data = cmd->data;
+
 	if (host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA)) {
 		struct scatterlist *sg;
 		unsigned int length_mask, offset_mask;
@@ -1169,6 +1178,12 @@ void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_data *data)
 
 	sdhci_config_dma(host);
 
+	if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+		/* Use PIO for non-block transmission */
+		if (!(cmd->arg & 0x08000000))
+			host->flags &= ~SDHCI_REQ_USE_DMA;
+	}
+
 	if (host->flags & SDHCI_REQ_USE_DMA) {
 		int sg_cnt = sdhci_pre_dma_transfer(host, data, COOKIE_MAPPED);
 
@@ -1210,7 +1225,7 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 
 	sdhci_initialize_data(host, data);
 
-	sdhci_prepare_dma(host, data);
+	sdhci_prepare_dma(host, cmd);
 
 	sdhci_set_block_info(host, data);
 }
@@ -3459,10 +3474,15 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		if (host->pending_reset)
 			return;
 
-		pr_err("%s: Got data interrupt 0x%08x even though no data operation was in progress.\n",
-		       mmc_hostname(host->mmc), (unsigned)intmask);
-		sdhci_err_stats_inc(host, UNEXPECTED_IRQ);
-		sdhci_dumpregs(host);
+		if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+			pr_debug("%s: Got data interrupt 0x%08x even though no data operation was in progress.\n",
+				 mmc_hostname(host->mmc), (unsigned)intmask);
+		} else {
+			pr_err("%s: Got data interrupt 0x%08x even though no data operation was in progress.\n",
+			       mmc_hostname(host->mmc), (unsigned)intmask);
+			sdhci_err_stats_inc(host, UNEXPECTED_IRQ);
+			sdhci_dumpregs(host);
+		}
 
 		return;
 	}
@@ -4750,7 +4770,13 @@ int sdhci_setup_host(struct sdhci_host *host)
 	 * can do scatter/gather or not.
 	 */
 	if (host->flags & SDHCI_USE_ADMA) {
-		mmc->max_segs = SDHCI_MAX_SEGS;
+		if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+			/* CY SDHC card does not support multi-descriptor */
+			mmc->max_segs = 1;
+		}
+		else {
+			mmc->max_segs = SDHCI_MAX_SEGS;
+		}
 	} else if (host->flags & SDHCI_USE_SDMA) {
 		mmc->max_segs = 1;
 		mmc->max_req_size = min_t(size_t, mmc->max_req_size,

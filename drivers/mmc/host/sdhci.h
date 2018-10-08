@@ -400,6 +400,7 @@ struct sdhci_adma2_64_desc {
 #define ADMA2_TRAN_VALID	0x21
 #define ADMA2_NOP_END_VALID	0x3
 #define ADMA2_END		0x2
+#define ADMA2_INT		0x4
 
 /*
  * Maximum segments assuming a 512KiB maximum requisition size and a minimum
@@ -539,6 +540,8 @@ struct sdhci_host {
 #define SDHCI_QUIRK2_USE_32BIT_BLK_CNT			(1<<18)
 /* Issue CMD and DATA reset together */
 #define SDHCI_QUIRK2_ISSUE_CMD_DAT_RESET_TOGETHER	(1<<19)
+/* Cypress internal FGPA HC 2.0 broken multi descriptor */
+#define SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN		(1<<31)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
@@ -837,7 +840,7 @@ bool sdhci_needs_reset(struct sdhci_host *host, struct mmc_request *mrq);
 bool sdhci_data_line_cmd(struct mmc_command *cmd);
 void sdhci_mod_timer(struct sdhci_host *host, struct mmc_request *mrq, unsigned long timeout);
 void sdhci_initialize_data(struct sdhci_host *host, struct mmc_data *data);
-void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_data *data);
+void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_command *cmd);
 void __sdhci_finish_mrq(struct sdhci_host *host, struct mmc_request *mrq);
 void sdhci_finish_mrq(struct sdhci_host *host, struct mmc_request *mrq);
 void __sdhci_finish_data_common(struct sdhci_host *host, bool defer_reset);
