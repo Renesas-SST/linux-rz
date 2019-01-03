@@ -681,6 +681,9 @@ struct sdhci_host {
 
 	u64			data_timeout;
 
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	bool			sdclk_gated;	/* Bus clock output is gated */
+#endif
 	unsigned long private[] ____cacheline_aligned;
 };
 
@@ -730,6 +733,9 @@ struct sdhci_ops {
 	void    (*dump_vendor_regs)(struct sdhci_host *host);
 	void	(*dump_uhs2_regs)(struct sdhci_host *host);
 	void    (*uhs2_pre_detect_init)(struct sdhci_host *host);
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	void	(*sd_clock_gate)(struct sdhci_host *host, bool on);
+#endif
 };
 
 #ifdef CONFIG_MMC_SDHCI_IO_ACCESSORS
@@ -878,6 +884,10 @@ void sdhci_complete_work(struct work_struct *work);
 irqreturn_t sdhci_thread_irq(int irq, void *dev_id);
 void sdhci_adma_write_desc(struct sdhci_host *host, void **desc,
 			   dma_addr_t addr, int len, unsigned int cmd);
+
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+void sdhci_sdclk_gate(struct mmc_host *mmc, bool enable);
+#endif
 
 #ifdef CONFIG_PM
 bool sdhci_enable_irq_wakeups(struct sdhci_host *host);

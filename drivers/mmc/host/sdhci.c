@@ -3091,6 +3091,27 @@ static void sdhci_card_event(struct mmc_host *mmc)
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+void sdhci_sdclk_gate(struct mmc_host *mmc, bool enable)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+	u16 clk_ctrl;
+
+	if (host->ops->sd_clock_gate)
+		host->ops->sd_clock_gate(host, enable);
+	else if (host->sdclk_gated != enable) {
+		clk_ctrl = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+		if (enable)
+			clk_ctrl &= ~SDHCI_CLOCK_CARD_EN;
+		else
+			clk_ctrl |= SDHCI_CLOCK_CARD_EN;
+		sdhci_writew(host, clk_ctrl, SDHCI_CLOCK_CONTROL);
+		host->sdclk_gated = enable;
+	}
+}
+EXPORT_SYMBOL_GPL(sdhci_sdclk_gate);
+#endif
+
 static const struct mmc_host_ops sdhci_ops = {
 	.request	= sdhci_request,
 	.post_req	= sdhci_post_req,
@@ -3106,6 +3127,9 @@ static const struct mmc_host_ops sdhci_ops = {
 	.execute_tuning			= sdhci_execute_tuning,
 	.card_event			= sdhci_card_event,
 	.card_busy	= sdhci_card_busy,
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	.bus_clock_gate	= sdhci_sdclk_gate,
+#endif
 };
 
 /*****************************************************************************\
