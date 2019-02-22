@@ -43,6 +43,10 @@
 #include "sdhci-pci.h"
 #include "sdhci-uhs2.h"
 
+char *override_ds_type = " ";
+module_param(override_ds_type, charp, 0);
+
+ static void sdhci_pci_hw_reset(struct sdhci_host *host);
 static void sdhci_pci_hw_reset(struct sdhci_host *host);
 
 #ifdef CONFIG_PM_SLEEP
@@ -226,6 +230,40 @@ static void sdhci_pci_dumpregs(struct mmc_host *mmc)
 	sdhci_dumpregs(mmc_priv(mmc));
 }
 
+static int ricoh_select_drive_strength(struct mmc_card *card,
+				       unsigned int max_dtr, int host_drv,
+				       int card_drv, int *drv_type)
+{
+	int drv_strength = 0;
+
+	pr_err("override drive strength to type %c\n", override_ds_type[0]);
+
+	switch (override_ds_type[0]) {
+	case 'a':
+	case 'A':
+		drv_strength = MMC_SET_DRIVER_TYPE_A;
+		break;
+	case 'b':
+	case 'B':
+		drv_strength = MMC_SET_DRIVER_TYPE_B;
+		break;
+	case 'c':
+	case 'C':
+		drv_strength = MMC_SET_DRIVER_TYPE_C;
+		break;
+	case 'd':
+	case 'D':
+		drv_strength = MMC_SET_DRIVER_TYPE_D;
+		break;
+	default:
+		pr_err("unknown overrided drive strength %c\n",
+		       override_ds_type[0]);
+		pr_err("Set MMC driver type to B\n");
+	}
+
+	return drv_strength;
+}
+
 /*****************************************************************************\
  *                                                                           *
  * Hardware specific quirk handling                                          *
@@ -237,6 +275,13 @@ static int ricoh_probe(struct sdhci_pci_chip *chip)
 	if (chip->pdev->subsystem_vendor == PCI_VENDOR_ID_SAMSUNG ||
 	    chip->pdev->subsystem_vendor == PCI_VENDOR_ID_SONY)
 		chip->quirks |= SDHCI_QUIRK_NO_CARD_NO_RESET;
+	return 0;
+}
+
+static int ricoh_probe_slot(struct sdhci_pci_slot *slot)
+{
+	slot->host->mmc_host_ops.select_drive_strength =
+		ricoh_select_drive_strength;
 	return 0;
 }
 
@@ -273,6 +318,7 @@ static const struct sdhci_pci_fixes sdhci_broadcom_fpga = {
 };
 static const struct sdhci_pci_fixes sdhci_ricoh = {
 	.probe		= ricoh_probe,
+	.probe_slot     = ricoh_probe_slot,
 	.quirks		= SDHCI_QUIRK_32BIT_DMA_ADDR |
 			  SDHCI_QUIRK_FORCE_DMA |
 			  SDHCI_QUIRK_CLOCK_BEFORE_RESET,
