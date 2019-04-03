@@ -288,6 +288,37 @@ static int sdio_enable_wide(struct mmc_card *card)
 	return 1;
 }
 
+static int sdio_enable_asyn_int(struct mmc_card *card)
+{
+	int ret;
+	u8 ctrl;
+
+	if (!(card->host->caps & MMC_CAP_4_BIT_DATA))
+		return 0;
+
+	if (card->cccr.low_speed && !card->cccr.wide_bus)
+		return 0;
+
+	ret = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_IF, 0, &ctrl);
+	if (ret)
+		return ret;
+
+	ctrl &= SDIO_BUS_WIDTH_MASK;
+	if (ctrl != SDIO_BUS_WIDTH_4BIT)
+		return 0;
+
+	ret = mmc_io_rw_direct(card, 0, 0,
+				SDIO_CCCR_INTERRUPT_EXT, 0, &ctrl);
+	if (ret)
+		return ret;
+	ctrl |= SDIO_INTERRUPT_EXT_EAI;
+	ret = mmc_io_rw_direct(card, 1, 0,
+				SDIO_CCCR_INTERRUPT_EXT, ctrl, NULL);
+	if (ret)
+		return ret;
+
+	return 1;
+}
 /*
  * If desired, disconnect the pull-up resistor on CD/DAT[3] (pin 1)
  * of the card. This may be required on certain setups of boards,
@@ -601,6 +632,13 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 	err = sdio_enable_4bit_bus(card);
 	if (err)
 		goto out;
+
+	/* Enable asynchronous interrupt for the card */
+	if (enable_clk_gate) {
+		err = sdio_enable_asyn_int(card);
+		if (err)
+			goto out;
+	}
 
 	/* Set the driver strength for the card */
 	sdio_select_driver_type(card);

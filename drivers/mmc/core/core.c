@@ -64,6 +64,10 @@ module_param(use_spi_crc, bool, 0);
 bool disable_uhs_mode = 0;
 module_param(disable_uhs_mode, bool, 0);
 
+/* Set enable_clk_gate=1 to enable SD clk gate feature */
+bool enable_clk_gate = 0;
+module_param(enable_clk_gate, bool, 0);
+
 static int mmc_schedule_delayed_work(struct delayed_work *work,
 				     unsigned long delay)
 {
@@ -353,6 +357,10 @@ int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 	if (mmc_card_removed(host->card))
 		return -ENOMEDIUM;
 
+	/* enable sd clk */
+	if (enable_clk_gate)
+		host->ops->bus_clock_gate(host, false);
+
 	mmc_mrq_pr_debug(host, mrq, false);
 
 	WARN_ON(!host->claimed);
@@ -428,6 +436,10 @@ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq)
 		cmd->error = 0;
 		__mmc_start_request(host, mrq);
 	}
+
+	/*  stop sd clk */
+	if (enable_clk_gate)
+		host->ops->bus_clock_gate(host, true);
 
 	mmc_retune_release(host);
 }

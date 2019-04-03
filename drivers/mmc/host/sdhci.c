@@ -2500,7 +2500,8 @@ void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 					mmc_hostname(mmc));
 				ctrl_2 |= SDHCI_CTRL_DRV_TYPE_B;
 			}
-
+			if (host->caps & SDHCI_CAN_ASYNC_INT)
+				ctrl_2 |= SDHCI_CTRL_ASYNC_INT_ENABLE;
 			sdhci_writew(host, ctrl_2, SDHCI_HOST_CONTROL2);
 			host->drv_type = ios->drv_type;
 		}
@@ -3605,12 +3606,19 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 	u32 intmask, mask, unexpected = 0;
 	int max_loops = 16;
 	int i;
-
+	u16 clk_ctrl = 0;
 	spin_lock(&host->lock);
 
 	if (host->runtime_suspended) {
 		spin_unlock(&host->lock);
 		return IRQ_NONE;
+	}
+
+	if (host->sdclk_gated) {
+		clk_ctrl = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+		clk_ctrl |= SDHCI_CLOCK_CARD_EN;
+		sdhci_writew(host, clk_ctrl, SDHCI_CLOCK_CONTROL);
+		host->sdclk_gated = false;
 	}
 
 	intmask = sdhci_readl(host, SDHCI_INT_STATUS);
