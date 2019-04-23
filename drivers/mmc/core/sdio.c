@@ -317,7 +317,7 @@ static int sdio_enable_asyn_int(struct mmc_card *card)
 	if (ret)
 		return ret;
 
-	return 1;
+	return 0;
 }
 /*
  * If desired, disconnect the pull-up resistor on CD/DAT[3] (pin 1)
