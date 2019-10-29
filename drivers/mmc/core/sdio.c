@@ -213,6 +213,12 @@ static int sdio_read_cccr(struct mmc_card *card, u32 ocr)
 					card->sw_caps.sd3_bus_mode
 						|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
 							| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+
+				if (sd_clk_div) {
+					pr_err("sd_clk_div not supported in UHS mode.\n");
+					pr_err("Current sd3_bus_mode: 0x%x\n",
+						card->sw_caps.sd3_bus_mode);
+				}
 			}
 
 			ret = mmc_io_rw_direct(card, 0, 0,
@@ -908,6 +914,7 @@ try_again:
 		if (err)
 			goto remove;
 	} else {
+		unsigned int clk_rate;
 		/*
 		 * Switch to high-speed (if supported).
 		 */
@@ -920,7 +927,21 @@ try_again:
 		/*
 		 * Change to the card's maximum speed.
 		 */
-		mmc_set_clock(host, mmc_sdio_get_max_clock(card));
+		if (sd_clk_div > 255) {
+			pr_err("Invalid sd_clk_div value: %d\n", sd_clk_div);
+			goto remove;
+		}
+
+		if (sd_clk_div) {
+			clk_rate =  mmc_sdio_get_max_clock(card)/sd_clk_div;
+			pr_err("clk_div = %d, sd clock rate : %d Hz\n",
+			sd_clk_div, clk_rate);
+		} else {
+			clk_rate = mmc_sdio_get_max_clock(card);
+			pr_err("sd clock rate : %d Hz\n", clk_rate);
+		}
+
+		mmc_set_clock(host, clk_rate);
 
 		/*
 		 * Switch to wider bus (if supported).

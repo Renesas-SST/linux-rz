@@ -92,6 +92,7 @@ int mmc_attach_sd_uhs2(struct mmc_host *host);
 extern bool use_spi_crc;
 extern bool disable_uhs_mode;
 extern bool enable_clk_gate;
+extern unsigned int sd_clk_div;
 
 /* Debugfs information for hosts and cards */
 #ifdef CONFIG_DEBUG_FS

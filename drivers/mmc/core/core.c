@@ -68,6 +68,14 @@ module_param(disable_uhs_mode, bool, 0);
 bool enable_clk_gate = 0;
 module_param(enable_clk_gate, bool, 0);
 
+/*
+ * Set sd_clk_div to fix sd clock rate
+ * sd_clk_dev is the SD clock divisor value.
+ * Only support in HS mode. sd_clk_div must be a power of 2 and < 256
+ */
+unsigned int sd_clk_div;
+module_param(sd_clk_div, uint, 0444);
+
 static int mmc_schedule_delayed_work(struct delayed_work *work,
 				     unsigned long delay)
 {
