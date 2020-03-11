@@ -357,9 +357,11 @@ int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 	if (mmc_card_removed(host->card))
 		return -ENOMEDIUM;
 
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
 	/* enable sd clk */
 	if (enable_clk_gate)
 		host->ops->bus_clock_gate(host, false);
+#endif
 
 	mmc_mrq_pr_debug(host, mrq, false);
 
@@ -436,11 +438,11 @@ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq)
 		cmd->error = 0;
 		__mmc_start_request(host, mrq);
 	}
-
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
 	/*  stop sd clk */
 	if (enable_clk_gate)
 		host->ops->bus_clock_gate(host, true);
-
+#endif
 	mmc_retune_release(host);
 }
 EXPORT_SYMBOL(mmc_wait_for_req_done);

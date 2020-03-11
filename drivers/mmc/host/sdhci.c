@@ -3606,7 +3606,6 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 	u32 intmask, mask, unexpected = 0;
 	int max_loops = 16;
 	int i;
-	u16 clk_ctrl = 0;
 	spin_lock(&host->lock);
 
 	if (host->runtime_suspended) {
@@ -3614,12 +3613,15 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 		return IRQ_NONE;
 	}
 
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
 	if (host->sdclk_gated) {
+		u16 clk_ctrl = 0;
 		clk_ctrl = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
 		clk_ctrl |= SDHCI_CLOCK_CARD_EN;
 		sdhci_writew(host, clk_ctrl, SDHCI_CLOCK_CONTROL);
 		host->sdclk_gated = false;
 	}
+#endif
 
 	intmask = sdhci_readl(host, SDHCI_INT_STATUS);
 	if (!intmask || intmask == 0xffffffff) {
