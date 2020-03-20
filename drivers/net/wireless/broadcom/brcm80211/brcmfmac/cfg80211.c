@@ -6040,6 +6040,7 @@ static int brcmf_cfg80211_change_bss(struct wiphy *wiphy, struct net_device *dev
 {
 	struct brcmf_if *ifp = netdev_priv(dev);
 	int ret = 0;
+	u32 ap_isolate, val;
 
 	/* In AP mode, the "ap_isolate" value represents
 	 *  0 = allow low-level bridging of frames between associated stations
@@ -6050,6 +6051,17 @@ static int brcmf_cfg80211_change_bss(struct wiphy *wiphy, struct net_device *dev
 		ret = brcmf_fil_iovar_int_set(ifp, "ap_isolate", params->ap_isolate);
 		if (ret < 0)
 			brcmf_err("ap_isolate iovar failed: ret=%d\n", ret);
+	}
+
+	/* Get ap_isolate value from firmware to detemine whether fmac */
+	/* driver supports packet forwarding. */
+	if (brcmf_fil_iovar_int_get(ifp, "ap_isolate", &val) == 0) {
+		ifp->fmac_pkt_fwd_en =
+			((params->ap_isolate == 0) && (val == 1)) ?
+			true : false;
+	} else {
+		brcmf_err("get ap_isolate iovar failed: ret=%d\n", ret);
+		ifp->fmac_pkt_fwd_en = false;
 	}
 
 	return ret;
