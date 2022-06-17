@@ -18,6 +18,7 @@
 #define BRCMF_CYW_E_EXT_AUTH_FRAME_RX	188
 #define BRCMF_CYW_E_MGMT_FRAME_TXS	189
 #define BRCMF_CYW_E_MGMT_FRAME_TXS_OC	190
+#define BRCMF_CYW_E_RSSI		56
 #define BRCMF_CYW_E_LAST		197
 
 #define MGMT_AUTH_FRAME_DWELL_TIME	4000
@@ -58,8 +59,9 @@ static const struct brcmf_fweh_event_map brcmf_cyw_event_map = {
 			BRCMF_E_MGMT_FRAME_OFFCHAN_DONE,
 			BRCMF_CYW_E_MGMT_FRAME_TXS_OC
 		},
+		{ BRCMF_E_RSSI, BRCMF_CYW_E_RSSI },
 	},
-	.n_items = 4
+	.n_items = 5
 };
 
 static int brcmf_cyw_alloc_fweh_info(struct brcmf_pub *drvr)
@@ -354,6 +356,36 @@ brcmf_notify_mgmt_tx_status(struct brcmf_if *ifp,
 	return 0;
 }
 
+
+static s32
+brcmf_notify_rssi_change_ind(struct brcmf_if *ifp,
+			     const struct brcmf_event_msg *e, void *data)
+{
+
+	struct brcmf_cfg80211_info *cfg = ifp->drvr->config;
+	struct wl_event_data_rssi *value = (struct wl_event_data_rssi *)data;
+	s32 rssi = 0;
+
+	brcmf_dbg(INFO, "Enter: event %s (%d), status=%d\n",
+		  brcmf_fweh_event_name(e->event_code), e->event_code,
+		  e->status);
+
+	if (!cfg->cqm_info.enable)
+		return 0;
+
+	rssi = ntohl(value->rssi);
+	brcmf_dbg(TRACE, "rssi: %d, threshold: %d, send event(%s)\n",
+		  rssi, cfg->cqm_info.rssi_threshold,
+		  rssi > cfg->cqm_info.rssi_threshold ? "HIGH" : "LOW");
+
+	cfg80211_cqm_rssi_notify(ifp->ndev,
+				 (rssi > cfg->cqm_info.rssi_threshold ?
+					NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH :
+					NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW),
+				 rssi, GFP_KERNEL);
+	return 0;
+}
+
 static void brcmf_cyw_register_event_handlers(struct brcmf_pub *drvr)
 {
 	brcmf_fweh_register(drvr, BRCMF_E_EXT_AUTH_REQ,
@@ -364,6 +396,9 @@ static void brcmf_cyw_register_event_handlers(struct brcmf_pub *drvr)
 			    brcmf_notify_mgmt_tx_status);
 	brcmf_fweh_register(drvr, BRCMF_E_MGMT_FRAME_OFFCHAN_DONE,
 			    brcmf_notify_mgmt_tx_status);
+	brcmf_fweh_register(drvr, BRCMF_E_RSSI,
+			    brcmf_notify_rssi_change_ind);
+	
 }
 
 const struct brcmf_fwvid_ops brcmf_cyw_ops = {
