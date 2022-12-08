@@ -76,6 +76,17 @@ module_param(enable_clk_gate, bool, 0);
 unsigned int sd_clk_div;
 module_param(sd_clk_div, uint, 0444);
 
+/* Set ultra high speed data mode
+ * Data mode value refers from include/linux/mmc/card.h
+ * SD_MODE_UHS_SDR12	1
+ * SD_MODE_UHS_SDR25	2
+ * SD_MODE_UHS_SDR50	4
+ * SD_MODE_UHS_SDR104	8
+ * SD_MODE_UHS_DDR50	16
+*/
+unsigned int sd_uhsimode = 0;
+module_param(sd_uhsimode, uint, 0);
+
 static int mmc_schedule_delayed_work(struct delayed_work *work,
 				     unsigned long delay)
 {

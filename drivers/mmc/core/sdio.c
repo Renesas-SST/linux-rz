@@ -199,25 +199,46 @@ static int sdio_read_cccr(struct mmc_card *card, u32 ocr)
 				goto out;
 
 			if (mmc_host_can_uhs(card->host)) {
-				if (data & SDIO_UHS_DDR50)
-					card->sw_caps.sd3_bus_mode
-						|= SD_MODE_UHS_DDR50 | SD_MODE_UHS_SDR50
-							| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+				if (sd_uhsimode) {
+					if(sd_uhsimode & SD_MODE_UHS_SDR12)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_SDR25)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_DDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_DDR50 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_SDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR25
+								| SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_SDR104)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+				} else {
+					if (data & SDIO_UHS_DDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_DDR50 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
 
-				if (data & SDIO_UHS_SDR50)
-					card->sw_caps.sd3_bus_mode
-						|= SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR25
-							| SD_MODE_UHS_SDR12;
+					if (data & SDIO_UHS_SDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR25
+								| SD_MODE_UHS_SDR12;
 
-				if (data & SDIO_UHS_SDR104)
-					card->sw_caps.sd3_bus_mode
-						|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
-							| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+					if (data & SDIO_UHS_SDR104)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
 
-				if (sd_clk_div) {
-					pr_err("sd_clk_div not supported in UHS mode.\n");
-					pr_err("Current sd3_bus_mode: 0x%x\n",
-						card->sw_caps.sd3_bus_mode);
+					if (sd_clk_div) {
+						pr_err("sd_clk_div not supported in UHS mode.\n");
+						pr_err("Current sd3_bus_mode: 0x%x\n",
+							card->sw_caps.sd3_bus_mode);
+					}
 				}
 			}
 
