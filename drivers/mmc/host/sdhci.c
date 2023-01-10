@@ -3470,6 +3470,8 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		 */
 		if (data_cmd && (data_cmd->flags & MMC_RSP_BUSY)) {
 			if (intmask & SDHCI_INT_DATA_TIMEOUT) {
+				pr_err("%s() %s: RSP busy and data timeout: 0x%08x\n",
+					__func__, mmc_hostname(host->mmc), intmask);
 				host->data_cmd = NULL;
 				data_cmd->error = -ETIMEDOUT;
 				sdhci_err_stats_inc(host, CMD_TIMEOUT);
@@ -3477,6 +3479,8 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 				return;
 			}
 			if (intmask & SDHCI_INT_DATA_END) {
+				pr_err("%s() %s: RSP busy and data end: 0x%08x\n",
+					__func__, mmc_hostname(host->mmc), intmask);
 				host->data_cmd = NULL;
 				/*
 				 * Some cards handle busy-end interrupt
@@ -3513,15 +3517,21 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 	}
 
 	if (intmask & SDHCI_INT_DATA_TIMEOUT) {
+		pr_err("%s() %s: data timeout: 0x%08x\n",
+			__func__, mmc_hostname(host->mmc), intmask);
 		host->data->error = -ETIMEDOUT;
 		sdhci_err_stats_inc(host, DAT_TIMEOUT);
 	} else if (intmask & SDHCI_INT_DATA_END_BIT) {
+		pr_err("%s() %s: data end bit: 0x%08x\n",
+			__func__, mmc_hostname(host->mmc), intmask);
 		host->data->error = -EILSEQ;
 		if (!mmc_op_tuning(SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))))
 			sdhci_err_stats_inc(host, DAT_CRC);
 	} else if ((intmask & (SDHCI_INT_DATA_CRC | SDHCI_INT_TUNING_ERROR)) &&
 		SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))
 			!= MMC_BUS_TEST_R) {
+		pr_err("%s() %s: data crc: 0x%08x\n",
+			__func__, mmc_hostname(host->mmc), intmask);
 		host->data->error = -EILSEQ;
 		if (!mmc_op_tuning(SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))))
 			sdhci_err_stats_inc(host, DAT_CRC);

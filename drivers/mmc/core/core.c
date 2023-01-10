@@ -249,6 +249,8 @@ static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 	/* Assumes host controller has been runtime resumed by mmc_claim_host */
 		err = mmc_retune(host);
 		if (err) {
+			pr_err("%s() %s: mmc retune failed, err %d\n",
+				__func__, mmc_hostname(host), err);
 			mrq->cmd->error = err;
 			mmc_request_done(host, mrq);
 			return;
@@ -268,6 +270,8 @@ static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 			mmc_delay(1);
 
 		if (tries == 0) {
+			pr_err("%s() %s: card busy\n",
+				__func__, mmc_hostname(host));
 			mrq->cmd->error = -EBUSY;
 			mmc_request_done(host, mrq);
 			return;
@@ -373,8 +377,11 @@ int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 
 	mmc_retune_hold(host);
 
-	if (mmc_card_removed(host->card))
+	if (mmc_card_removed(host->card)) {
+		pr_err("%s() %s: card removed\n",
+			__func__, mmc_hostname(host));
 		return -ENOMEDIUM;
+	}
 
 #ifdef CONFIG_MMC_BUS_CLOCK_GATE
 	/* enable sd clk */
@@ -387,8 +394,11 @@ int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 	WARN_ON(!host->claimed);
 
 	err = mmc_mrq_prep(host, mrq);
-	if (err)
+	if (err) {
+		pr_err("%s() %s: mrq prep failed, err %d\n",
+			__func__, mmc_hostname(host), err);
 		return err;
+	}
 
 	if (host->uhs2_sd_tran)
 		mmc_uhs2_prepare_cmd(host, mrq);
@@ -428,6 +438,8 @@ static int __mmc_start_req(struct mmc_host *host, struct mmc_request *mrq)
 
 	err = mmc_start_request(host, mrq);
 	if (err) {
+		pr_err("%s() %s: start request failed, err %d\n",
+			__func__, mmc_hostname(host), err);
 		mrq->cmd->error = err;
 		mmc_complete_cmd(mrq);
 		complete(&mrq->completion);

@@ -105,12 +105,16 @@ static int sdio_init_func(struct mmc_card *card, unsigned int fn)
 	int ret;
 	struct sdio_func *func;
 
-	if (WARN_ON(fn > SDIO_MAX_FUNCS))
+	if (WARN_ON(fn > SDIO_MAX_FUNCS)) {
+		pr_err("%s() invalid function number %d\n", __func__, fn);
 		return -EINVAL;
+	}
 
 	func = sdio_alloc_func(card);
-	if (IS_ERR(func))
+	if (IS_ERR(func)) {
+		pr_err("%s() alloc function failed %d\n", __func__, IS_ERR(func));
 		return PTR_ERR(func);
+	}
 
 	func->num = fn;
 

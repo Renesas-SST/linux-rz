@@ -438,14 +438,20 @@ int mmc_spi_set_crc(struct mmc_host *host, int use_crc)
 static int mmc_switch_status_error(struct mmc_host *host, u32 status)
 {
 	if (mmc_host_is_spi(host)) {
-		if (status & R1_SPI_ILLEGAL_COMMAND)
+		if (status & R1_SPI_ILLEGAL_COMMAND) {
+			pr_err("%s() %s: R1 SPI illegal command\n",
+				__func__, mmc_hostname(host));
 			return -EBADMSG;
+		}
 	} else {
 		if (R1_STATUS(status))
 			pr_warn("%s: unexpected status %#x after switch\n",
 				mmc_hostname(host), status);
-		if (status & R1_SWITCH_ERROR)
+		if (status & R1_SWITCH_ERROR) {
+			pr_err("%s() %s: R1 switch error\n",
+				__func__, mmc_hostname(host));
 			return -EBADMSG;
+		}
 	}
 	return 0;
 }
