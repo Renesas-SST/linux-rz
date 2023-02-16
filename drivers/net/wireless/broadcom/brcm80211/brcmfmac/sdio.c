@@ -4838,7 +4838,6 @@ int brcmf_get_intr_pending_data(void *ctx)
 		brcmf_err("Device hung, return failure.\n");
 	}
 
-	brcmf_err("intr pending err= %d\n", err);
 	return 0;
 }
 
