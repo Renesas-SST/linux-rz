@@ -391,14 +391,12 @@ struct brcmf_pciedev_info {
 	struct brcmf_mp_device *settings;
 	struct brcmf_otp_params otp;
 	bool fwseed;
+	ulong bar1_size;
 #ifdef DEBUG
 	u32 console_interval;
 	bool console_active;
 	struct timer_list timer;
 #endif
-#ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
-	ulong bar1_size;
-#endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 };
 
 struct brcmf_pcie_ringbuf {
@@ -540,6 +538,8 @@ brcmf_pcie_write_reg32(struct brcmf_pciedev_info *devinfo, u32 reg_offset,
 static u8
 brcmf_pcie_read_tcm8(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 	unsigned long flags;
@@ -557,6 +557,13 @@ brcmf_pcie_read_tcm8(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 
 	return value;
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus,
+			  "mem_offset:%d exceeds device size=%ld\n",
+			  mem_offset, devinfo->bar1_size);
+		return -EINVAL;
+	}
+
 	return (ioread8(address));
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -565,6 +572,8 @@ brcmf_pcie_read_tcm8(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 static u16
 brcmf_pcie_read_tcm16(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 	u16 value;
@@ -582,6 +591,12 @@ brcmf_pcie_read_tcm16(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 
 	return value;
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus, "mem_offset:%d exceeds device size=%ld\n",
+				mem_offset, devinfo->bar1_size);
+		return -EINVAL;
+	}
+
 	return (ioread16(address));
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -591,6 +606,8 @@ static void
 brcmf_pcie_write_tcm16(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 		       u16 value)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 	unsigned long flags;
@@ -606,6 +623,12 @@ brcmf_pcie_write_tcm16(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 	pci_write_config_dword(devinfo->pdev, BCMA_PCI_BAR1_WIN, 0x0);
 	raw_spin_unlock_irqrestore(&pcie_lock, flags);
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus, "mem_offset:%d exceeds device size=%ld\n",
+				mem_offset, devinfo->bar1_size);
+		return;
+	}
+
 	iowrite16(value, address);
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -633,6 +656,8 @@ brcmf_pcie_write_idx(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 static u32
 brcmf_pcie_read_tcm32(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 	u32 value;
@@ -650,6 +675,12 @@ brcmf_pcie_read_tcm32(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 
 	return value;
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus, "mem_offset:%d exceeds device size=%ld\n",
+			  mem_offset, devinfo->bar1_size);
+		return -EINVAL;
+	}
+
 	return (ioread32(address));
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -659,6 +690,8 @@ static void
 brcmf_pcie_write_tcm32(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 		       u32 value)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 	unsigned long flags;
@@ -673,6 +706,12 @@ brcmf_pcie_write_tcm32(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 	pci_write_config_dword(devinfo->pdev, BCMA_PCI_BAR1_WIN, 0x0);
 	raw_spin_unlock_irqrestore(&pcie_lock, flags);
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus, "mem_offset:%d exceeds device size=%ld\n",
+			  mem_offset, devinfo->bar1_size);
+		return;
+	}
+
 	iowrite32(value, address);
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -681,6 +720,8 @@ brcmf_pcie_write_tcm32(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 static u32
 brcmf_pcie_read_ram32(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + devinfo->ci->rambase
 		+ mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
@@ -699,6 +740,12 @@ brcmf_pcie_read_ram32(struct brcmf_pciedev_info *devinfo, u32 mem_offset)
 
 	return value;
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus, "mem_offset:%d exceeds device size=%ld\n",
+			  mem_offset, devinfo->bar1_size);
+		return -EINVAL;
+	}
+
 	return (ioread32(address));
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -708,6 +755,8 @@ static void
 brcmf_pcie_write_ram32(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 		       u32 value)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + devinfo->ci->rambase
 		+ mem_offset;
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
@@ -723,6 +772,12 @@ brcmf_pcie_write_ram32(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 	pci_write_config_dword(devinfo->pdev, BCMA_PCI_BAR1_WIN, 0x0);
 	raw_spin_unlock_irqrestore(&pcie_lock, flags);
 #else
+	if ((address - devinfo->tcm) >= devinfo->bar1_size) {
+		brcmf_err(bus, "mem_offset:%d exceeds device size=%ld\n",
+			  mem_offset, devinfo->bar1_size);
+		return;
+	}
+
 	iowrite32(value, address);
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 }
@@ -732,6 +787,8 @@ static void
 brcmf_pcie_copy_mem_todev(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 			  void *srcaddr, u32 len)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 	__le32 *src32;
 	__le16 *src16;
@@ -754,8 +811,15 @@ brcmf_pcie_copy_mem_todev(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 						 devinfo->bar1_size);
 					address = address -
 						devinfo->bar1_size;
-				}
+				} else
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
+				if ((address - devinfo->tcm) >=
+				     devinfo->bar1_size) {
+					brcmf_err(bus,
+						  "mem_offset:%d exceeds device size=%ld\n",
+						  mem_offset, devinfo->bar1_size);
+					return;
+				}
 				iowrite8(*src8, address);
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 				raw_spin_unlock_irqrestore(&pcie_lock, flags);
@@ -778,8 +842,15 @@ brcmf_pcie_copy_mem_todev(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 						devinfo->bar1_size);
 					address = address -
 						devinfo->bar1_size;
-				}
+				} else
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
+				if ((address - devinfo->tcm) >=
+				     devinfo->bar1_size) {
+					brcmf_err(bus,
+						  "mem_offset:%d exceeds device size=%ld\n",
+						  mem_offset, devinfo->bar1_size);
+					return;
+				}
 				iowrite16(le16_to_cpu(*src16), address);
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 				raw_spin_unlock_irqrestore(&pcie_lock, flags);
@@ -802,8 +873,15 @@ brcmf_pcie_copy_mem_todev(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 					 BCMA_PCI_BAR1_WIN,
 					 devinfo->bar1_size);
 				address = address - devinfo->bar1_size;
-			}
+			} else
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
+			if ((address - devinfo->tcm) >=
+				devinfo->bar1_size) {
+				brcmf_err(bus,
+					  "mem_offset:%d exceeds device size=%ld\n",
+					  mem_offset, devinfo->bar1_size);
+				return;
+			}
 			iowrite32(le32_to_cpu(*src32), address);
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 			raw_spin_unlock_irqrestore(&pcie_lock, flags);
@@ -823,6 +901,8 @@ static void
 brcmf_pcie_copy_dev_tomem(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 			  void *dstaddr, u32 len)
 {
+	struct pci_dev *pdev = devinfo->pdev;
+	struct brcmf_bus *bus = dev_get_drvdata(&pdev->dev);
 	void __iomem *address = devinfo->tcm + mem_offset;
 	__le32 *dst32;
 	__le16 *dst16;
@@ -845,8 +925,15 @@ brcmf_pcie_copy_dev_tomem(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 						devinfo->bar1_size);
 					address = address -
 						devinfo->bar1_size;
-				}
+				} else
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
+				if ((address - devinfo->tcm) >=
+					devinfo->bar1_size) {
+					brcmf_err(bus,
+						  "mem_offset:%d exceeds device size=%ld\n",
+						  mem_offset, devinfo->bar1_size);
+					return;
+				}
 				*dst8 = ioread8(address);
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 				raw_spin_unlock_irqrestore(&pcie_lock, flags);
@@ -869,8 +956,15 @@ brcmf_pcie_copy_dev_tomem(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 						devinfo->bar1_size);
 					address = address -
 						devinfo->bar1_size;
-				}
+				} else
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
+				if ((address - devinfo->tcm) >=
+					devinfo->bar1_size) {
+					brcmf_err(bus,
+						  "mem_offset:%d exceeds device size=%ld\n",
+						  mem_offset, devinfo->bar1_size);
+					return;
+				}
 				*dst16 = cpu_to_le16(ioread16(address));
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 				raw_spin_unlock_irqrestore(&pcie_lock, flags);
@@ -893,8 +987,15 @@ brcmf_pcie_copy_dev_tomem(struct brcmf_pciedev_info *devinfo, u32 mem_offset,
 					BCMA_PCI_BAR1_WIN,
 					devinfo->bar1_size);
 				address = address - devinfo->bar1_size;
-			}
+			} else
 #endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
+			if ((address - devinfo->tcm) >=
+				devinfo->bar1_size) {
+				brcmf_err(bus,
+					  "mem_offset:%d exceeds device size=%ld\n",
+					  mem_offset, devinfo->bar1_size);
+				return;
+			}
 			*dst32 = cpu_to_le32(ioread32(address));
 #ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 			raw_spin_unlock_irqrestore(&pcie_lock, flags);
@@ -2291,9 +2392,7 @@ static int brcmf_pcie_get_resource(struct brcmf_pciedev_info *devinfo)
 
 	devinfo->regs = ioremap(bar0_addr, BRCMF_PCIE_REG_MAP_SIZE);
 	devinfo->tcm = ioremap(bar1_addr, bar1_size);
-#ifdef CONFIG_BRCMFMAC_PCIE_BARWIN_SZ
 	devinfo->bar1_size = bar1_size;
-#endif /* CONFIG_BRCMFMAC_PCIE_BARWIN_SZ */
 
 	if (!devinfo->regs || !devinfo->tcm) {
 		brcmf_err(bus, "ioremap() failed (%p,%p)\n", devinfo->regs,
