@@ -85,10 +85,8 @@ static int mmc_io_rw_direct_host(struct mmc_host *host, int write, unsigned fn,
 	cmd.flags = MMC_RSP_SPI_R5 | MMC_RSP_R5 | MMC_CMD_AC;
 
 	err = mmc_wait_for_cmd(host, &cmd, 0);
-	if (err) {
-		pr_err("%s() wait cmd failed, err %d\n", __func__, err);
+	if (err)
 		return err;
-	}
 
 	if (mmc_host_is_spi(host)) {
 		/* host driver already reported errors */
