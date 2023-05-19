@@ -35,6 +35,7 @@
 #include "bus.h"
 #include "common.h"
 #include "fwvid.h"
+#include "twt.h"
 
 #define BRCMF_SCAN_IE_LEN_MAX		2048
 
@@ -1977,6 +1978,7 @@ static void brcmf_link_down(struct brcmf_cfg80211_vif *vif, u16 reason,
 			brcmf_set_pmk(vif->ifp, NULL, 0);
 		vif->profile.use_fwsup = BRCMF_PROFILE_FWSUP_NONE;
 	}
+
 	brcmf_dbg(TRACE, "Exit\n");
 }
 
@@ -3024,8 +3026,14 @@ brcmf_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *ndev,
 	scbval.val = cpu_to_le32(reason_code);
 	err = brcmf_fil_cmd_data_set(ifp, BRCMF_C_DISASSOC,
 				     &scbval, sizeof(scbval));
-	if (err)
+	if (err) {
 		bphy_err(drvr, "error (%d)\n", err);
+	} else {
+		if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_TWT)) {
+		         /* Cleanup TWT Session list */
+		        brcmf_twt_cleanup_sessions(ifp);
+		}
+	}
 
 	brcmf_dbg(TRACE, "Exit\n");
 	return err;

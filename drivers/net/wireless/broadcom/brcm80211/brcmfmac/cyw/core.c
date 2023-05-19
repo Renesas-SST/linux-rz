@@ -10,6 +10,8 @@
 #include <fwil.h>
 #include <fweh.h>
 #include <common.h>
+#include <feature.h>
+#include <twt.h>
 
 #include "vops.h"
 #include "fwil_types.h"
@@ -421,15 +423,6 @@ brcmf_notify_beacon_loss(struct brcmf_if *ifp,
 	return 0;
 }
 
-static int
-brcmf_notify_twt(struct brcmf_if *ifp,
-		 const struct brcmf_event_msg *e,
-		 void *data)
-{
-	brcmf_dbg(TRACE, "Enter\n");
-	return 0;
-}
-
 static void brcmf_cyw_register_event_handlers(struct brcmf_pub *drvr)
 {
 	brcmf_fweh_register(drvr, BRCMF_E_EXT_AUTH_REQ,
@@ -443,9 +436,14 @@ static void brcmf_cyw_register_event_handlers(struct brcmf_pub *drvr)
 	brcmf_fweh_register(drvr, BRCMF_E_RSSI,
 			    brcmf_notify_rssi_change_ind);
 	brcmf_fweh_register(drvr, BRCMF_E_BCNLOST_MSG,
-			    brcmf_notify_beacon_loss);	
-	brcmf_fweh_register(drvr, BRCMF_E_TWT_SETUP,
-			    brcmf_notify_twt);
+			    brcmf_notify_beacon_loss);
+	if (brcmf_feat_is_enabled(brcmf_get_ifp(drvr, 0), BRCMF_FEAT_TWT)) {
+		brcmf_fweh_register(drvr, BRCMF_E_TWT_SETUP,
+				    brcmf_notify_twt_event);
+		brcmf_fweh_register(drvr, BRCMF_E_TWT_TEARDOWN,
+				    brcmf_notify_twt_event);
+	}
+
 }
 
 const struct brcmf_fwvid_ops brcmf_cyw_ops = {
