@@ -46,6 +46,10 @@
 char *override_ds_type = " ";
 module_param(override_ds_type, charp, 0);
 
+/* Disable RICOH reset */
+bool disable_ricoh_rst = 0;
+module_param(disable_ricoh_rst, bool, 0);
+
  static void sdhci_pci_hw_reset(struct sdhci_host *host);
 static void sdhci_pci_hw_reset(struct sdhci_host *host);
 
@@ -310,6 +314,15 @@ static int ricoh_mmc_resume(struct sdhci_pci_chip *chip)
 	return sdhci_pci_resume_host(chip);
 }
 #endif
+
+static void ricoh_reset(struct pci_dev *pdev, struct sdhci_host *host)
+{
+	pr_err("give RST to dongle for RICOH SDHC\n");
+	sdhci_writel(host, 0x8, RICOH_WL_RST_REG);
+	msleep(100);
+	sdhci_writel(host, 0x0, RICOH_WL_RST_REG);
+	pr_err("end of RICOH reset\n");
+}
 
 static const struct sdhci_pci_fixes sdhci_broadcom_fpga = {
 	.quirks         = SDHCI_QUIRK_FORCE_DMA |
@@ -2282,12 +2295,8 @@ static struct sdhci_pci_slot *sdhci_pci_probe_slot(
 	if (ret)
 		goto remove;
 
-	if (pdev->vendor == PCI_VENDOR_ID_RICOH) {
-		pr_err("give RST to dongle for RICOH SDHC\n");
-		sdhci_writel(host, 0x8, RICOH_WL_RST_REG);
-		msleep(100);
-		sdhci_writel(host, 0x0, RICOH_WL_RST_REG);
-	}
+	if (!disable_ricoh_rst && pdev->vendor == PCI_VENDOR_ID_RICOH)
+		ricoh_reset(pdev, host);
 
 	/*
 	 * Check if the chip needs a separate GPIO for card detect to wake up
