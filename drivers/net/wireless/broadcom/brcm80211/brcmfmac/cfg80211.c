@@ -2476,19 +2476,28 @@ brcmf_set_key_mgmt(struct net_device *ndev, struct cfg80211_connect_params *sme)
 		switch (sme->crypto.akm_suites[0]) {
 		case WLAN_AKM_SUITE_SAE:
 			val = WPA3_AUTH_SAE_PSK;
+			if (sme->crypto.sae_pwd) {
+				brcmf_dbg(INFO, "using SAE offload\n");
+				profile->use_fwsup = BRCMF_PROFILE_FWSUP_SAE;
+			}
 			break;
 		case WLAN_AKM_SUITE_FT_OVER_SAE:
-			val = WPA3_AUTH_SAE_PSK | WPA2_AUTH_FT;
+			val = WPA3_AUTH_SAE_FBT;
 			profile->is_ft = true;
+			if (sme->crypto.sae_pwd) {
+				brcmf_dbg(INFO, "using SAE offload\n");
+				profile->use_fwsup = BRCMF_PROFILE_FWSUP_SAE;
+			}
+			else {
+				profile->use_fwsup = BRCMF_PROFILE_FWSUP_ROAM;
+			}
 			break;
 		default:
 			bphy_err(drvr, "invalid akm suite (%d)\n",
 				 sme->crypto.akm_suites[0]);
 			return -EINVAL;
 		}
-		if (sme->crypto.sae_pwd) {
-			profile->use_fwsup = BRCMF_PROFILE_FWSUP_SAE;
-		}
+		
 	}
 
 
