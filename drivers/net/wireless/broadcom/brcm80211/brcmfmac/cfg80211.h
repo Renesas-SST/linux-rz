@@ -534,4 +534,7 @@ int brcmf_set_wsec(struct brcmf_if *ifp, const u8 *key, u16 key_len, u16 flags);
 int brcmf_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			   struct cfg80211_mgmt_tx_params *params, u64 *cookie);
 void brcmf_cfg80211_update_proto_addr_mode(struct wireless_dev *wdev);
+void brcmf_cfg80211_link_down(struct brcmf_cfg80211_vif *vif, u16 reason,
+			    bool locally_generated);
+void brcmf_cfg80211_init_prof(struct brcmf_cfg80211_profile *prof);
 #endif /* BRCMFMAC_CFG80211_H */

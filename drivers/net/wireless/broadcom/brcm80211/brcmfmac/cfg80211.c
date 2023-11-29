@@ -8381,6 +8381,14 @@ static s32 brcmf_dongle_roam(struct brcmf_if *ifp)
 	__le32 roam_delta[2];
 
 	/* Configure beacon timeout value based upon roaming setting */
+	if (ifp->drvr->settings->roamoff < BRCMF_ROAMOFF_DISABLE ||
+	    ifp->drvr->settings->roamoff >= BRCMF_ROAMOFF_MAX) {
+		bphy_err(drvr,
+			 "roamoff setting is incorrect (%d), reset it\n",
+			 ifp->drvr->settings->roamoff);
+		ifp->drvr->settings->roamoff = BRCMF_ROAMOFF_DISABLE;
+	}
+
 	if (ifp->drvr->settings->roamoff)
 		bcn_timeout = BRCMF_DEFAULT_BCN_TIMEOUT_ROAM_OFF;
 	else
@@ -8394,10 +8402,10 @@ static s32 brcmf_dongle_roam(struct brcmf_if *ifp)
 	/* Enable/Disable built-in roaming to allow supplicant to take care of
 	 * roaming.
 	 */
-	brcmf_dbg(INFO, "Internal Roaming = %s\n",
-		  ifp->drvr->settings->roamoff ? "Off" : "On");
+	brcmf_dbg(INFO, "Internal Roaming = %s, Mode:%d\n",
+		  ifp->drvr->settings->roamoff ? "Off" : "On", ifp->drvr->settings->roamoff);
 	err = brcmf_fil_iovar_int_set(ifp, "roam_off",
-				      ifp->drvr->settings->roamoff);
+				      ifp->drvr->settings->roamoff ? 1 : 0);
 	if (err) {
 		bphy_err(drvr, "roam_off error (%d)\n", err);
 		goto roam_setup_done;
@@ -9392,7 +9400,7 @@ static int brcmf_setup_wiphy(struct wiphy *wiphy, struct brcmf_if *ifp)
 
 	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_TDLS))
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_TDLS;
-	if (!ifp->drvr->settings->roamoff)
+	if (ifp->drvr->settings->roamoff == BRCMF_ROAMOFF_DISABLE)
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM;
 	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_FWSUP)) {
 		wiphy_ext_feature_set(wiphy,
@@ -10273,3 +10281,16 @@ void brcmf_cfg80211_detach(struct brcmf_cfg80211_info *cfg)
 	brcmf_free_wiphy(cfg->wiphy);
 	kfree(cfg);
 }
+
+void brcmf_cfg80211_link_down(struct brcmf_cfg80211_vif *vif, u16 reason,
+			    bool locally_generated)
+{
+	brcmf_link_down(vif, reason, locally_generated);
+}
+BRCMF_EXPORT_SYMBOL_GPL(brcmf_cfg80211_link_down);
+
+void brcmf_cfg80211_init_prof(struct brcmf_cfg80211_profile *prof)
+{
+	brcmf_init_prof(prof);
+}
+BRCMF_EXPORT_SYMBOL_GPL(brcmf_cfg80211_init_prof);

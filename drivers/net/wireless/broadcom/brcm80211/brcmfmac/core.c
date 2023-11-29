@@ -1120,6 +1120,7 @@ void brcmf_net_setcarrier(struct brcmf_if *ifp, bool on)
 			netif_carrier_off(ndev);
 	}
 }
+BRCMF_EXPORT_SYMBOL_GPL(brcmf_net_setcarrier);
 
 static int brcmf_net_p2p_open(struct net_device *ndev)
 {

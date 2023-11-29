@@ -396,29 +396,42 @@ brcmf_notify_beacon_loss(struct brcmf_if *ifp,
 	struct brcmf_cfg80211_info *cfg = ifp->drvr->config;
 	struct brcmf_cfg80211_profile *profile = &ifp->vif->profile;
 	struct cfg80211_bss *bss;
+	struct net_device *ndev = ifp->ndev;
 
 	brcmf_dbg(INFO, "Enter: event %s (%d), status=%d\n",
 		  brcmf_fweh_event_name(e->event_code), e->event_code,
 		  e->status);
 
-	if (!ifp->drvr->settings->roamoff)
-		return 0;
-
-	/* On beacon loss event, Supplicant triggers new scan request
-	 * with NL80211_SCAN_FLAG_FLUSH Flag set, but lost AP bss entry
-	 * still remained as it is held by cfg as associated. Unlinking this
-	 * current BSS from cfg cached bss list on beacon loss event here,
-	 * would allow supplicant to receive new scanned entries
-	 * without current bss and select new bss to trigger roam.
-	 */
-	bss = cfg80211_get_bss(cfg->wiphy, NULL, profile->bssid, 0, 0,
-			       IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
-	if (bss) {
-		cfg80211_unlink_bss(cfg->wiphy, bss);
-		cfg80211_put_bss(cfg->wiphy, bss);
-	}
-
-	cfg80211_cqm_beacon_loss_notify(ifp->ndev, GFP_KERNEL);
+	switch (ifp->drvr->settings->roamoff) {
+	case BRCMF_ROAMOFF_EN_BCNLOST_MSG:
+		/* On beacon loss event, Supplicant triggers new scan request
+		 * with NL80211_SCAN_FLAG_FLUSH Flag set, but lost AP bss entry
+		 * still remained as it is held by cfg as associated. Unlinking this
+		 * current BSS from cfg cached bss list on beacon loss event here,
+		 * would allow supplicant to receive new scanned entries
+		 * without current bss and select new bss to trigger roam.
+		 */
+		bss = cfg80211_get_bss(cfg->wiphy, NULL, profile->bssid, 0, 0,
+				       IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
+		if (bss) {
+			cfg80211_unlink_bss(cfg->wiphy, bss);
+			cfg80211_put_bss(cfg->wiphy, bss);
+		}
+		cfg80211_cqm_beacon_loss_notify(cfg_to_ndev(cfg), GFP_KERNEL);
+		break;
+	case BRCMF_ROAMOFF_EN_DISCONNECT_EVT:
+		brcmf_cfg80211_link_down(ifp->vif,
+				WLAN_REASON_UNSPECIFIED,
+				true);
+		brcmf_cfg80211_init_prof(ndev_to_prof(ndev));
+		if (ndev != cfg_to_ndev(cfg))
+			complete(&cfg->vif_disabled);
+		brcmf_net_setcarrier(ifp, false);
+		break;
+	case BRCMF_ROAMOFF_DISABLE:
+		default:
+			break;
+		}
 
 	return 0;
 }
