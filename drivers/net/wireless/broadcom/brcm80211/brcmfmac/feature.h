@@ -32,6 +32,7 @@
  * DUMP_OBSS: Firmware has capable to dump obss info to support ACS
  * SCAN_V2: Version 2 scan params
  * SAE_EXT: SAE authentication handled by user-space supplicant
+ * SURVEY_DUMP: Firmware has capable to survey dump info
  * GCMP: firmware has defined GCMP or not.
  * TWT: Firmware has the TWT Module Support.
  * OFFLOADS: Firmware can do the packet processing work offloaded by
@@ -66,6 +67,7 @@
 	BRCMF_FEAT_DEF(SCAN_V2) \
 	BRCMF_FEAT_DEF(PMKID_V2) \
 	BRCMF_FEAT_DEF(PMKID_V3) \
+	BRCMF_FEAT_DEF(SURVEY_DUMP) \
 	BRCMF_FEAT_DEF(SAE_EXT) \
 	BRCMF_FEAT_DEF(FBT) \
 	BRCMF_FEAT_DEF(OKC) \
