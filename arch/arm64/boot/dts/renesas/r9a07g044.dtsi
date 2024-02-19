@@ -786,7 +786,8 @@
 		};
 
 		gpt0: gpt@10048000 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048000 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 218 IRQ_TYPE_EDGE_RISING>,
@@ -813,7 +814,8 @@
 		};
 
 		gpt1: gpt@10048100 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048100 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 231 IRQ_TYPE_EDGE_RISING>,
@@ -840,7 +842,8 @@
 		};
 
 		gpt2: gpt@10048200 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048200 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 244 IRQ_TYPE_EDGE_RISING>,
@@ -868,7 +871,8 @@
 
 
 		gpt3: gpt@10048300 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048300 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 257 IRQ_TYPE_EDGE_RISING>,
@@ -895,7 +899,8 @@
 		};
 
 		gpt4: gpt@10048400 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048400 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 270 IRQ_TYPE_EDGE_RISING>,
@@ -923,7 +928,8 @@
 
 
 		gpt5: gpt@10048500 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048500 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 283 IRQ_TYPE_EDGE_RISING>,
@@ -950,7 +956,8 @@
 		};
 
 		gpt6: gpt@10048600 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048600 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 296 IRQ_TYPE_EDGE_RISING>,
@@ -977,7 +984,8 @@
 		};
 
 		gpt7: gpt@10048700 {
-			compatible = "renesas,gpt-r9a07g044";
+			compatible = "renesas,r9a07g044-gpt",
+				     "renesas,rzg2l-gpt";
 			reg = <0 0x10048700 0 0xa4>;
 			#pwm-cells = <2>;
 			interrupts = <GIC_SPI 309 IRQ_TYPE_EDGE_RISING>,
@@ -1002,7 +1010,6 @@
 			resets =  <&cpg R9A07G044_GPT_RST_C>;
 			status = "disabled";
 		};
-
 
 		cru: video@10830000 {
 			compatible = "renesas,r9a07g044-cru", "renesas,rzg2l-cru";
