@@ -448,6 +448,11 @@ struct bcm_xtlv {
 	u8	data[1];
 };
 
+enum brcmf_pmksa_action {
+	PMKSA_SET = 0,
+	PMKSA_DELETE = 1
+};
+
 static inline struct wiphy *cfg_to_wiphy(struct brcmf_cfg80211_info *cfg)
 {
 	return cfg->wiphy;
@@ -537,4 +542,7 @@ void brcmf_cfg80211_update_proto_addr_mode(struct wireless_dev *wdev);
 void brcmf_cfg80211_link_down(struct brcmf_cfg80211_vif *vif, u16 reason,
 			    bool locally_generated);
 void brcmf_cfg80211_init_prof(struct brcmf_cfg80211_profile *prof);
+s32 brcmf_cfg80211_update_pmksa(struct brcmf_cfg80211_info *cfg,
+		   struct brcmf_if *ifp, const u8 *bssid, const u8 *pmkid,
+		   enum brcmf_pmksa_action action);
 #endif /* BRCMFMAC_CFG80211_H */
