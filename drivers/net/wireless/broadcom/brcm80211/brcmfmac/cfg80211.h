@@ -545,4 +545,6 @@ void brcmf_cfg80211_init_prof(struct brcmf_cfg80211_profile *prof);
 s32 brcmf_cfg80211_update_pmksa(struct brcmf_cfg80211_info *cfg,
 		   struct brcmf_if *ifp, const u8 *bssid, const u8 *pmkid,
 		   enum brcmf_pmksa_action action);
+int ifx_vndr_cmdstr_hashtbl_init(void);
+void ifx_vndr_cmdstr_hashtbl_deinit(void);
 #endif /* BRCMFMAC_CFG80211_H */
