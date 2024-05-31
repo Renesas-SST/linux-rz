@@ -15,14 +15,14 @@
 	model = "Renesas RZG2L SBC board";
 
 	aliases {
-		i2c3 = "/soc/i2c@10058c00";
-		ethernet0 = "/soc/ethernet@11c20000";
-		ethernet1 = "/soc/ethernet@11c30000";
-		serial0 = "/soc/serial@1004b800";
-		i2c0 = "/soc/i2c@10058000";
-		i2c1 = "/soc/i2c@10058400";
-		mmc0 = "/soc/mmc@11c00000";
-		mmc1 = "/soc/mmc@11c10000";
+		ethernet0 = &eth0;
+		ethernet1 = &eth1;
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		mmc0 = &sdhi0;
+		mmc1 = &sdhi1;
+		serial0 = &scif0;
+		serial2 = &scif2;
 	};
 
 	chosen {
