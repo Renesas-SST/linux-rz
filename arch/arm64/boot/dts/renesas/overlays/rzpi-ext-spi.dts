@@ -21,7 +21,7 @@
 &spi0 {
 	pinctrl-0 = <&spi0_pins>;
 	pinctrl-names = "default";
-	dmas = <&dmac 0x2e99>, <&dmac 0x2e9a>;
+	dmas = <&dmac 0x2e95>, <&dmac 0x2e96>;
 	dma-names = "tx", "rx";
 	status = "okay";
 
