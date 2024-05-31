@@ -12,7 +12,7 @@
 
 / {
 	compatible = "rzpi", "renesas,r9a07g044l2", "renesas,r9a07g044";
-	model = "NovTech RZpi board";
+	model = "Renesas RZG2L SBC board";
 
 	aliases {
 		i2c3 = "/soc/i2c@10058c00";
