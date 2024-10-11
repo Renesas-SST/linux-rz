@@ -244,6 +244,8 @@ struct backlight_device *rzsbc_mcu_get_backlightdev(void)
 	return bl;
 }
 
+EXPORT_SYMBOL_GPL(rzsbc_mcu_get_backlightdev);
+
 static ssize_t rzsbc_mcu_bl_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	if (BL_DEBUG)
