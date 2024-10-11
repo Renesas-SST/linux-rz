@@ -26,7 +26,7 @@
 	};
 
 	chosen {
-		bootargs = "ignore_loglevel rw root=/dev/nfs ip=on";
+		bootargs = "quiet loglevel=3 root=/dev/mmcblk0p2 rootwait";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -886,3 +886,114 @@
 		};
 	};
 };
+
+/* Merge all overlays for quick boot images */
+/* 40-pin extended GPIO, expanded into UART, SPI, I2C, PWM and other interfaces */
+/* CAN interface */
+&pinctrl {
+        can0_pins: can0 {
+                pinmux = <RZG2L_PORT_PINMUX(42, 1, 3)>, /* TX */
+                         <RZG2L_PORT_PINMUX(11, 0, 2)>; /* RX */
+        };
+
+        can1_pins: can1 {
+                pinmux = <RZG2L_PORT_PINMUX(46, 0, 3)>, /* TX */
+                         <RZG2L_PORT_PINMUX(46, 1, 3)>; /* RX */
+        };
+};
+
+&canfd {
+        pinctrl-0 = <&can0_pins>, <&can1_pins>;
+        pinctrl-names = "default";
+        status = "okay";
+
+        /* Default set as Classical CAN(CAN 2.0) mode, remove to enable CAN FD mode */
+        renesas,no-can-fd;
+
+        /* CAN on 40pin header without transceiver */
+        channel0 {
+                status = "okay";
+        };
+
+        /* CAN on J18 with transceiver */
+        channel1 {
+                status = "okay";
+        };
+};
+
+/* I2C3 Interface */
+&pinctrl {
+        i2c3_pins: i2c3 {
+                pinmux = <RZG2L_PORT_PINMUX(46, 2, 4)>, /* SDA */
+                         <RZG2L_PORT_PINMUX(46, 3, 4)>; /* SCL */
+        };
+};
+
+&i2c3 {
+        pinctrl-0 = <&i2c3_pins>;
+        pinctrl-names = "default";
+        clock-frequency = <400000>;
+        status = "okay";
+};
+
+/* SPI0 Interface */
+&pinctrl {
+        spi0_pins: spi0 {
+                pinmux = <RZG2L_PORT_PINMUX(43, 0, 1)>, /* CK */
+                         <RZG2L_PORT_PINMUX(43, 1, 1)>, /* MOSI */
+                         <RZG2L_PORT_PINMUX(43, 2, 1)>, /* MISO */
+                         <RZG2L_PORT_PINMUX(43, 3, 1)>; /* SSL */
+        };
+};
+
+&spi0 {
+        pinctrl-0 = <&spi0_pins>;
+        pinctrl-names = "default";
+        dmas = <&dmac 0x2e95>, <&dmac 0x2e96>;
+        dma-names = "tx", "rx";
+        status = "okay";
+
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        spidev@0 {
+                compatible = "semtech,sx1301";
+                reg = <0>;
+                spi-max-frequency = <2000000>;
+        };
+};
+
+/* CSI2 Interface */
+&csi2 {
+        status = "okay";
+};
+
+&ov5640 {
+        status = "okay";
+};
+
+/* DSI0 Interface */
+/* Set the dsi0 to disable to use the HDMI */
+/* Example */
+/*
+&dsi0 {
+        status = "disabled";
+};
+*/
+&dsi0 {
+        status = "okay";
+};
+
+// enable 5inch Waveshare panel (Raspberry Pi compatible)
+&mipi_panel {
+        status = "okay";
+};
+
+&rzsbc_mcu {
+        status = "okay";
+};
+
+&rzsbc_ft5406 {
+        status = "okay";
+};
+
