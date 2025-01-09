@@ -44,6 +44,10 @@
 /* Memory Bank Base Address (Higher) Register for CRU Image Data */
 #define AMnMBxADDRH(x)			(0x104 + ((x) * 8))
 
+/* UV Data Address Offset (Lower/Higher) Register for CRU Image Data */
+#define AMnUVAOFL			0x140
+#define AMnUVAOFH			0x144
+
 /* Memory Bank Enable Register for CRU Image Data */
 #define AMnMBVALID			0x148
 #define AMnMBVALID_MBVALID(x)		GENMASK(x, 0)
@@ -83,7 +87,14 @@
 
 /* CRU Data Output Mode Register */
 #define ICnDMR				0x26c
+#define ICnDMR_RGBMODE_RGB24		(0 << 0)
+#define ICnDMR_RGBMODE_XRGB32		(1 << 0)
+#define ICnDMR_RGBMODE_ABGR32		(2 << 0)
+#define ICnDMR_RGBMODE_ARGB32		(3 << 0)
+#define ICnDMR_YCMODE_YUYV		(0 << 4)
 #define ICnDMR_YCMODE_UYVY		(1 << 4)
+#define ICnDMR_YCMODE_NV16		(2 << 4)
+#define ICnDMR_YCMODE_GREY		(3 << 4)
 
 #define RZG2L_TIMEOUT_MS		100
 #define RZG2L_RETRIES			10
@@ -339,6 +350,59 @@ static int rzg2l_cru_initialize_image_conv(struct rzg2l_cru_dev *cru,
 	case V4L2_PIX_FMT_UYVY:
 		icndmr = ICnDMR_YCMODE_UYVY;
 		output_is_yuv = true;
+		break;
+	case V4L2_PIX_FMT_YUYV:
+		icndmr = ICnDMR_YCMODE_YUYV;
+		output_is_yuv = true;
+		break;
+	case V4L2_PIX_FMT_GREY:
+		icndmr = ICnDMR_YCMODE_GREY;
+		output_is_yuv = true;
+		break;
+	case V4L2_PIX_FMT_NV16:
+		icndmr = ICnDMR_YCMODE_NV16;
+		output_is_yuv = true;
+		rzg2l_cru_write(cru, AMnUVAOFL,
+			ALIGN(cru->format.width * cru->format.height, 0x200));
+		break;
+	case V4L2_PIX_FMT_BGR24:
+		icndmr = ICnDMR_RGBMODE_RGB24;
+		output_is_yuv = false;
+		break;
+	case V4L2_PIX_FMT_XBGR32:
+		icndmr = ICnDMR_RGBMODE_XRGB32;
+		output_is_yuv = false;
+		break;
+	case V4L2_PIX_FMT_ABGR32:
+		icndmr = ICnDMR_RGBMODE_ABGR32;
+		output_is_yuv = false;
+		break;
+	case V4L2_PIX_FMT_ARGB32:
+		icndmr = ICnDMR_RGBMODE_ARGB32;
+		output_is_yuv = false;
+		break;
+	case V4L2_PIX_FMT_SGBRG8:
+	case V4L2_PIX_FMT_SGRBG8:
+	case V4L2_PIX_FMT_SRGGB8:
+	case V4L2_PIX_FMT_SBGGR8:
+	case V4L2_PIX_FMT_SGBRG10:
+	case V4L2_PIX_FMT_SGRBG10:
+	case V4L2_PIX_FMT_SRGGB10:
+	case V4L2_PIX_FMT_SBGGR10:
+	case V4L2_PIX_FMT_SGBRG12:
+	case V4L2_PIX_FMT_SGRBG12:
+	case V4L2_PIX_FMT_SRGGB12:
+	case V4L2_PIX_FMT_SBGGR12:
+	case V4L2_PIX_FMT_SGBRG14P:
+	case V4L2_PIX_FMT_SGRBG14P:
+	case V4L2_PIX_FMT_SRGGB14P:
+	case V4L2_PIX_FMT_SBGGR14P:
+	case V4L2_PIX_FMT_SGBRG16:
+	case V4L2_PIX_FMT_SGRBG16:
+	case V4L2_PIX_FMT_SRGGB16:
+	case V4L2_PIX_FMT_SBGGR16:
+		icndmr = 0;
+		output_is_yuv = false;
 		break;
 	default:
 		dev_err(cru->dev, "Invalid pixelformat (0x%x)\n",
@@ -881,11 +945,118 @@ error:
 
 static const struct v4l2_format_info rzg2l_cru_formats[] = {
 	{
-		.format = V4L2_PIX_FMT_UYVY,
-		.bpp[0] = 2,
+		.format			= V4L2_PIX_FMT_NV16,
+		.bpp[0]			= 1,
+	},
+	{
+		.format			= V4L2_PIX_FMT_GREY,
+		.bpp[0]			= 1,
+	},
+	{
+		.format			= V4L2_PIX_FMT_YUYV,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_UYVY,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_BGR24,
+		.bpp[0]			= 3,
+	},
+	{
+		.format			= V4L2_PIX_FMT_XBGR32,
+		.bpp[0]			= 4,
+	},
+	{
+		.format			= V4L2_PIX_FMT_ABGR32,
+		.bpp[0]			= 4,
+	},
+	{
+		.format			= V4L2_PIX_FMT_ARGB32,
+		.bpp[0]			= 4,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SRGGB8,
+		.bpp[0]			= 1,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SBGGR8,
+		.bpp[0]			= 1,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGRBG8,
+		.bpp[0]			= 1,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGBRG8,
+		.bpp[0]			= 1,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SRGGB10,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SBGGR10,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGRBG10,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGBRG10,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SRGGB12,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SBGGR12,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGRBG12,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGBRG12,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SRGGB14P,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SBGGR14P,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGRBG14P,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGBRG14P,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SRGGB16,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SBGGR16,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGRBG16,
+		.bpp[0]			= 2,
+	},
+	{
+		.format			= V4L2_PIX_FMT_SGBRG16,
+		.bpp[0]			= 2,
 	},
 };
-
 const struct v4l2_format_info *rzg2l_cru_format_from_pixel(u32 format)
 {
 	unsigned int i;
