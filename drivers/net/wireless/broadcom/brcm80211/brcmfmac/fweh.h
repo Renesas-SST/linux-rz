@@ -103,6 +103,7 @@ struct brcmf_cfg80211_info;
 	BRCMF_ENUM_DEF(TWT_SETUP, 157) \
 	BRCMF_ENUM_DEF(TWT_TEARDOWN, 195) \
 	BRCMF_ENUM_DEF(EXT_ASSOC_FRAME_RX, 196) \
+	BRCMF_ENUM_DEF(ICMP_ECHO_REQ, 202) \
 	BRCMF_ABSTRACT_ENUM_DEF(EXT_AUTH_REQ, 0) \
 	BRCMF_ABSTRACT_ENUM_DEF(EXT_AUTH_FRAME_RX, 1) \
 	BRCMF_ABSTRACT_ENUM_DEF(MGMT_FRAME_TXSTATUS, 2) \
@@ -119,7 +120,7 @@ enum brcmf_fweh_event_code {
 	 * minimum length check in device firmware so it is
 	 * hard-coded here.
 	 */
-	BRCMF_E_LAST = 197
+	BRCMF_E_LAST = 203
 };
 #undef BRCMF_ENUM_DEF
 
