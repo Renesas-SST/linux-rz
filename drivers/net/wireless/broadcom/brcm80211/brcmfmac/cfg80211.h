@@ -14,7 +14,11 @@
 #include "p2p.h"
 #include "pno.h"
 
+
 #define	DOT11_MGMT_HDR_LEN		24	/* d11 management header len */
+
+/* Max length of Interworking element */
+#define BRCMF_IW_IES_MAX_BUF_LEN	8
 
 #define BRCMF_SCAN_IE_LEN_MAX		2048
 
