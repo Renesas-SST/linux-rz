@@ -574,4 +574,7 @@ s32 brcmf_cfg80211_update_pmksa(struct brcmf_cfg80211_info *cfg,
 		   enum brcmf_pmksa_action action);
 int ifx_vndr_cmdstr_hashtbl_init(void);
 void ifx_vndr_cmdstr_hashtbl_deinit(void);
+s32 brcmf_cfg80211_inform_single_bss(struct brcmf_cfg80211_info *cfg,
+				   struct brcmf_bss_info_le *bi);
+void brcmf_cfg80211_delay(u32 ms);
 #endif /* BRCMFMAC_CFG80211_H */

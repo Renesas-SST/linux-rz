@@ -10673,3 +10673,16 @@ s32 brcmf_cfg80211_update_pmksa(struct brcmf_cfg80211_info *cfg,
 	return brcmf_update_pmksa(cfg, ifp, bssid, pmkid, action);
 }
 BRCMF_EXPORT_SYMBOL_GPL(brcmf_cfg80211_update_pmksa);
+
+s32 brcmf_cfg80211_inform_single_bss(struct brcmf_cfg80211_info *cfg,
+				   struct brcmf_bss_info_le *bi)
+{
+	return brcmf_inform_single_bss(cfg, bi);
+}
+BRCMF_EXPORT_SYMBOL_GPL(brcmf_cfg80211_inform_single_bss);
+
+void brcmf_cfg80211_delay(u32 ms)
+{
+	brcmf_delay(ms);
+}
+BRCMF_EXPORT_SYMBOL_GPL(brcmf_cfg80211_delay);

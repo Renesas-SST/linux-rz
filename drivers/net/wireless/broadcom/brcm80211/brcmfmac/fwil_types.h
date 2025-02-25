@@ -15,6 +15,9 @@
 #define BRCMF_AF_PARAM_V2_FW_MAJOR 13
 #define BRCMF_AF_PARAM_V2_FW_MINOR 2
 
+#define BRCMF_AUTH_STATUS_V2_FW_MAJOR 13
+#define BRCMF_AUTH_STATUS_V2_FW_MINOR 3
+
 /* ARP Offload feature flags for arp_ol iovar */
 #define BRCMF_ARP_OL_AGENT		0x00000001
 #define BRCMF_ARP_OL_SNOOP		0x00000002
@@ -663,6 +666,17 @@ struct brcmf_wsec_pmk_le {
 struct brcmf_wsec_sae_pwd_le {
 	__le16 key_len;
 	u8 key[BRCMF_WSEC_MAX_SAE_PASSWORD_LEN];
+};
+
+struct brcmf_auth_req_status_info_le_v2 {
+	__le16	version;
+	__le16	len;
+	__le16  flags;
+	u8 peer_mac[ETH_ALEN];/* peer mac address */
+	__le32 ssid_len;
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
+	u8 pmkid[WLAN_PMKID_LEN];
+	struct brcmf_bss_info_le bss_info_le[];
 };
 
 /* Used to get specific STA parameters */
