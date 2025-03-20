@@ -33,6 +33,8 @@
 
 #include "ravb.h"
 
+static struct net_device *ndevs[2] = { NULL, NULL };
+
 #define RAVB_DEF_MSG_ENABLE \
 		(NETIF_MSG_LINK	  | \
 		 NETIF_MSG_TIMER  | \
@@ -1922,6 +1924,20 @@ static int ravb_open(struct net_device *ndev)
 	if (info->gptp || info->ccc_gac)
 		ravb_ptp_init(ndev, priv->pdev);
 
+	/* Since eth1 cannot operate independently, eth0 must be enabled before using eth1. */
+	if (priv->dev_id == 1 && ndevs[0] && !netif_running(ndevs[0])) {
+		struct ravb_private *priv_eth0 = netdev_priv(ndevs[0]);
+
+		error = pm_runtime_resume_and_get(&priv_eth0->pdev->dev);
+		if (error)
+			goto out_set_reset;
+
+		/* Set AVB config mode. */
+		error = ravb_set_config_mode(ndevs[0]);
+		if (error)
+			goto out_set_reset;
+	}
+
 	/* PHY control start */
 	error = ravb_phy_start(ndev);
 	if (error)
@@ -2331,13 +2347,15 @@ static int ravb_close(struct net_device *ndev)
 	/* Update statistics. */
 	ravb_get_stats(ndev);
 
-	/* Set reset mode. */
-	error = ravb_set_opmode(ndev, CCC_OPC_RESET);
-	if (error)
-		return error;
-
-	pm_runtime_mark_last_busy(dev);
-	pm_runtime_put_autosuspend(dev);
+	/* Since eth1 cannot operate independently, if eth1 is still active,
+	 * do not set eth0 to RESET mode and suspend it in the ravb_close function. */
+	if (priv->dev_id == 0 && (!ndevs[1] || !netif_running(ndevs[1]))) {
+		error = ravb_set_opmode(ndev, CCC_OPC_RESET);
+		if (error)
+			return error;
+		pm_runtime_mark_last_busy(dev);
+		pm_runtime_put_autosuspend(dev);
+	}
 
 	return 0;
 }
@@ -2865,6 +2883,15 @@ static int ravb_probe(struct platform_device *pdev)
 		priv->num_tx_ring[RAVB_NC] = NC_TX_RING_SIZE;
 		priv->num_rx_ring[RAVB_NC] = NC_RX_RING_SIZE;
 	}
+
+	priv->dev_id = of_alias_get_id(np, "ethernet");
+	if (priv->dev_id < 0) {
+		dev_err(&pdev->dev, "Failed to get ethernet alias ID\n");
+		return -EINVAL;
+	}
+
+	if (priv->dev_id < 2)
+		ndevs[priv->dev_id] = ndev;
 
 	error = ravb_setup_irqs(priv);
 	if (error)

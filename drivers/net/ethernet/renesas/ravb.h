@@ -1112,6 +1112,7 @@ struct ravb_private {
 	struct work_struct work;
 	/* MII transceiver section. */
 	struct mii_bus *mii_bus;	/* MDIO bus control */
+	int dev_id;
 	int link;
 	phy_interface_t phy_interface;
 	int msg_enable;
