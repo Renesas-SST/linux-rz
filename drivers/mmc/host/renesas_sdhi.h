@@ -93,14 +93,17 @@ struct renesas_sdhi {
 	unsigned int tap_set;
 
 	struct reset_control *rstc;
+
+	/* Pin Voltage Switching support: 1 for not support, 0 for support */
+	bool no_pin_volt_switch;
 };
 
 #define host_to_priv(host) \
 	container_of((host)->pdata, struct renesas_sdhi, mmc_data)
 
 int renesas_sdhi_probe(struct platform_device *pdev,
-		       const struct tmio_mmc_dma_ops *dma_ops,
-		       const struct renesas_sdhi_of_data *of_data,
-		       const struct renesas_sdhi_quirks *quirks);
+			const struct tmio_mmc_dma_ops *dma_ops,
+			const struct renesas_sdhi_of_data *of_data,
+			const struct renesas_sdhi_quirks *quirks);
 void renesas_sdhi_remove(struct platform_device *pdev);
 #endif

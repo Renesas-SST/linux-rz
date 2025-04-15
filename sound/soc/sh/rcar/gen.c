@@ -178,6 +178,8 @@ static int _rsnd_gen_regmap_init(struct rsnd_priv *priv,
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, name);
 	if (!res)
+		res = platform_get_resource(pdev, IORESOURCE_MEM, reg_id);
+	if (!res)
 		return -ENODEV;
 
 	base = devm_ioremap_resource(dev, res);
@@ -222,7 +224,9 @@ static const struct rsnd_regmap_field_conf conf_common_ssiu[] = {
 	RSND_GEN_S_REG(SSI_MODE0,		0x800),
 	RSND_GEN_S_REG(SSI_MODE1,		0x804),
 	RSND_GEN_S_REG(SSI_MODE2,		0x808), // (A)
+	RSND_GEN_S_REG(SSI_MODE3,		0x80C),
 	RSND_GEN_S_REG(SSI_CONTROL,		0x810),
+	RSND_GEN_S_REG(SSI_CONTROL2,	0x814),
 	RSND_GEN_S_REG(SSI_SYS_STATUS0,		0x840),
 	RSND_GEN_S_REG(SSI_SYS_STATUS1,		0x844),
 	RSND_GEN_S_REG(SSI_SYS_STATUS2,		0x848),
@@ -390,6 +394,7 @@ static const struct rsnd_regmap_field_conf conf_common_adg[] = {
 	RSND_GEN_S_REG(AUDIO_CLK_SEL0,		0x0c),
 	RSND_GEN_S_REG(AUDIO_CLK_SEL1,		0x10),
 	RSND_GEN_S_REG(AUDIO_CLK_SEL2,		0x14),
+	RSND_GEN_S_REG(AUDIO_CLK_SEL3,		0x18),
 	RSND_GEN_S_REG(DIV_EN,			0x30),
 	RSND_GEN_S_REG(SRCIN_TIMSEL0,		0x34),
 	RSND_GEN_S_REG(SRCIN_TIMSEL1,		0x38),
@@ -404,6 +409,7 @@ static const struct rsnd_regmap_field_conf conf_common_adg[] = {
 	RSND_GEN_S_REG(CMDOUT_TIMSEL,		0x5c),
 };
 
+
 static const struct rsnd_regmap_field_conf conf_common_ssi[] = {
 	RSND_GEN_M_REG(SSICR,			0x00,	0x40),
 	RSND_GEN_M_REG(SSISR,			0x04,	0x40),
@@ -412,6 +418,22 @@ static const struct rsnd_regmap_field_conf conf_common_ssi[] = {
 	RSND_GEN_M_REG(SSIWSR,			0x20,	0x40),
 };
 
+static const struct rsnd_regmap_field_conf conf_common_spdif[] = {
+	RSND_GEN_M_REG(SPDIF_TLCA,		0x00,	0x400),
+	RSND_GEN_M_REG(SPDIF_TRCA,		0x04,	0x400),
+	RSND_GEN_M_REG(SPDIF_TLCS,		0x08,	0x400),
+	RSND_GEN_M_REG(SPDIF_TRCS,		0x0C,	0x400),
+	RSND_GEN_M_REG(SPDIF_TUI,		0x10,	0x400),
+	RSND_GEN_M_REG(SPDIF_RLCA,		0x14,	0x400),
+	RSND_GEN_M_REG(SPDIF_RRCA,		0x18,	0x400),
+	RSND_GEN_M_REG(SPDIF_RLCS,		0x1C,	0x400),
+	RSND_GEN_M_REG(SPDIF_RRCS,		0x20,	0x400),
+	RSND_GEN_M_REG(SPDIF_RUI,		0x24,	0x400),
+	RSND_GEN_M_REG(SPDIF_CTRL,		0x28,	0x400),
+	RSND_GEN_M_REG(SPDIF_STAT,		0x2C,	0x400),
+	RSND_GEN_M_REG(SPDIF_TDAD,		0x30,	0x400),
+	RSND_GEN_M_REG(SPDIF_RDAD,		0x34,	0x400),
+};
 /*
  *		Gen4
  */
@@ -465,6 +487,25 @@ static int rsnd_gen1_probe(struct rsnd_priv *priv)
 }
 
 /*
+ *		RZV2H
+ */
+static int rsnd_rzv2h_probe(struct rsnd_priv *priv)
+{
+	/*
+	 * ssi : SSI? need to recheck on device tree and hardware manual
+	 * assume all of them have 10 channels (from 0 to 9)
+	 */
+	int ret_ssiu = rsnd_gen_regmap_init(priv, 10, RSND_BASE_SSIU, "ssiu", conf_common_ssiu);
+	int ret_scu = rsnd_gen_regmap_init(priv, 10, RSND_BASE_SCU,  "scu",  conf_common_scu);
+	int ret_adg = rsnd_gen_regmap_init(priv, 10, RSND_BASE_ADG,  "adg",  conf_common_adg);
+	int ret_ssi = rsnd_gen_regmap_init(priv, 10, RSND_BASE_SSI,  "ssi",  conf_common_ssi);
+	int ret_spdif = rsnd_gen_regmap_init(priv, 10, RSND_BASE_SPDIF,  "spdif",  conf_common_spdif);
+
+	return ret_ssiu | ret_scu | ret_adg | ret_ssi | ret_spdif;
+
+}
+
+/*
  *		Gen
  */
 int rsnd_gen_probe(struct rsnd_priv *priv)
@@ -487,6 +528,8 @@ int rsnd_gen_probe(struct rsnd_priv *priv)
 		ret = rsnd_gen2_probe(priv);
 	else if (rsnd_is_gen4(priv))
 		ret = rsnd_gen4_probe(priv);
+	else if (rsnd_is_rzv2h(priv))
+		ret = rsnd_rzv2h_probe(priv);
 
 	if (ret < 0)
 		dev_err(dev, "unknown generation R-Car sound device\n");

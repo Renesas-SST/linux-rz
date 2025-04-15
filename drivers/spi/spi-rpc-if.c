@@ -7,12 +7,14 @@
 // Copyright (C) 2019 - 2020 Cogent Embedded, Inc.
 //
 
+#include <linux/of.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spi-mem.h>
 
 #include <memory/renesas-rpc-if.h>
+#include <memory/renesas-xspi-if.h>
 
 #include <asm/unaligned.h>
 
@@ -58,7 +60,7 @@ static void rpcif_spi_mem_prepare(struct spi_device *spi_dev,
 		rpc_op.data.dir = RPCIF_NO_DATA;
 	}
 
-	rpcif_prepare(rpc->dev, &rpc_op, offs, len);
+	rpc->ops->prepare(rpc, &rpc_op, offs, len);
 }
 
 static bool rpcif_spi_mem_supports_op(struct spi_mem *mem,
@@ -75,6 +77,20 @@ static bool rpcif_spi_mem_supports_op(struct spi_mem *mem,
 	return true;
 }
 
+static ssize_t rpcif_spi_mem_dirmap_write(struct spi_mem_dirmap_desc *desc,
+					 u64 offs, size_t len, const void *buf)
+{
+	struct rpcif *rpc =
+		spi_controller_get_devdata(desc->mem->spi->controller);
+
+	if (offs + desc->info.offset + len > U32_MAX)
+		return -EINVAL;
+
+	rpcif_spi_mem_prepare(desc->mem->spi, &desc->info.op_tmpl, &offs, &len);
+
+	return rpc->ops->dirmap_write(rpc, offs, len, buf);
+}
+
 static ssize_t rpcif_spi_mem_dirmap_read(struct spi_mem_dirmap_desc *desc,
 					 u64 offs, size_t len, void *buf)
 {
@@ -86,7 +102,7 @@ static ssize_t rpcif_spi_mem_dirmap_read(struct spi_mem_dirmap_desc *desc,
 
 	rpcif_spi_mem_prepare(desc->mem->spi, &desc->info.op_tmpl, &offs, &len);
 
-	return rpcif_dirmap_read(rpc->dev, offs, len, buf);
+	return rpc->ops->dirmap_read(rpc, offs, len, buf);
 }
 
 static int rpcif_spi_mem_dirmap_create(struct spi_mem_dirmap_desc *desc)
@@ -103,7 +119,8 @@ static int rpcif_spi_mem_dirmap_create(struct spi_mem_dirmap_desc *desc)
 	if (!rpc->dirmap && desc->info.op_tmpl.data.dir == SPI_MEM_DATA_IN)
 		return -ENOTSUPP;
 
-	if (desc->info.op_tmpl.data.dir == SPI_MEM_DATA_OUT)
+	if (desc->info.op_tmpl.data.dir == SPI_MEM_DATA_OUT &&
+			!rpc->ops->dirmap_write)
 		return -ENOTSUPP;
 
 	return 0;
@@ -117,7 +134,7 @@ static int rpcif_spi_mem_exec_op(struct spi_mem *mem,
 
 	rpcif_spi_mem_prepare(mem->spi, op, NULL, NULL);
 
-	return rpcif_manual_xfer(rpc->dev);
+	return rpc->ops->manual_xfer(rpc);
 }
 
 static const struct spi_controller_mem_ops rpcif_spi_mem_ops = {
@@ -125,6 +142,24 @@ static const struct spi_controller_mem_ops rpcif_spi_mem_ops = {
 	.exec_op	= rpcif_spi_mem_exec_op,
 	.dirmap_create	= rpcif_spi_mem_dirmap_create,
 	.dirmap_read	= rpcif_spi_mem_dirmap_read,
+	.dirmap_write   = rpcif_spi_mem_dirmap_write,
+};
+
+static const struct rpcif_ops rpc_ops = {
+	.sw_init	= rpcif_sw_init,
+	.hw_init	= rpcif_hw_init,
+	.prepare	= rpcif_prepare,
+	.manual_xfer	= rpcif_manual_xfer,
+	.dirmap_read	= rpcif_dirmap_read,
+};
+
+static const struct rpcif_ops xspi_ops = {
+	.sw_init	= xspi_sw_init,
+	.hw_init	= xspi_hw_init,
+	.prepare	= xspi_prepare,
+	.manual_xfer	= xspi_manual_xfer,
+	.dirmap_read	= xspi_dirmap_read,
+	.dirmap_write	= xspi_dirmap_write,
 };
 
 static int rpcif_spi_probe(struct platform_device *pdev)
@@ -134,12 +169,20 @@ static int rpcif_spi_probe(struct platform_device *pdev)
 	struct rpcif *rpc;
 	int error;
 
-	ctlr = devm_spi_alloc_host(&pdev->dev, sizeof(*rpc));
+	ctlr = devm_spi_alloc_master(&pdev->dev, sizeof(*rpc));
 	if (!ctlr)
 		return -ENOMEM;
 
 	rpc = spi_controller_get_devdata(ctlr);
-	error = rpcif_sw_init(rpc, parent);
+
+	if (of_device_is_compatible(parent->of_node, "renesas,g3s-xspi-if") ||
+	    of_device_is_compatible(parent->of_node, "renesas,v2h-xspi-if") ||
+	    of_device_is_compatible(parent->of_node, "renesas,g3e-xspi-if"))
+		rpc->ops = &xspi_ops;
+	else
+		rpc->ops = &rpc_ops;
+
+	error = rpc->ops->sw_init(rpc, parent);
 	if (error)
 		return error;
 
@@ -147,7 +190,7 @@ static int rpcif_spi_probe(struct platform_device *pdev)
 
 	ctlr->dev.of_node = parent->of_node;
 
-	pm_runtime_enable(rpc->dev);
+	rpcif_enable_rpm(rpc);
 
 	ctlr->num_chipselect = 1;
 	ctlr->mem_ops = &rpcif_spi_mem_ops;
@@ -156,7 +199,7 @@ static int rpcif_spi_probe(struct platform_device *pdev)
 	ctlr->mode_bits = SPI_CPOL | SPI_CPHA | SPI_TX_QUAD | SPI_RX_QUAD;
 	ctlr->flags = SPI_CONTROLLER_HALF_DUPLEX;
 
-	error = rpcif_hw_init(rpc->dev, false);
+	error = rpc->ops->hw_init(rpc, false);
 	if (error)
 		goto out_disable_rpm;
 
@@ -169,17 +212,19 @@ static int rpcif_spi_probe(struct platform_device *pdev)
 	return 0;
 
 out_disable_rpm:
-	pm_runtime_disable(rpc->dev);
+	rpcif_disable_rpm(rpc);
 	return error;
 }
 
-static void rpcif_spi_remove(struct platform_device *pdev)
+static int rpcif_spi_remove(struct platform_device *pdev)
 {
 	struct spi_controller *ctlr = platform_get_drvdata(pdev);
 	struct rpcif *rpc = spi_controller_get_devdata(ctlr);
 
 	spi_unregister_controller(ctlr);
-	pm_runtime_disable(rpc->dev);
+	rpcif_disable_rpm(rpc);
+
+	return 0;
 }
 
 static int __maybe_unused rpcif_spi_suspend(struct device *dev)
@@ -198,16 +243,9 @@ static int __maybe_unused rpcif_spi_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(rpcif_spi_pm_ops, rpcif_spi_suspend, rpcif_spi_resume);
 
-static const struct platform_device_id rpc_if_spi_id_table[] = {
-	{ .name = "rpc-if-spi" },
-	{ /* sentinel */ }
-};
-MODULE_DEVICE_TABLE(platform, rpc_if_spi_id_table);
-
 static struct platform_driver rpcif_spi_driver = {
 	.probe	= rpcif_spi_probe,
-	.remove_new = rpcif_spi_remove,
-	.id_table = rpc_if_spi_id_table,
+	.remove	= rpcif_spi_remove,
 	.driver = {
 		.name	= "rpc-if-spi",
 #ifdef CONFIG_PM_SLEEP

@@ -223,7 +223,7 @@ void regulator_bulk_free(int num_consumers,
 			 struct regulator_bulk_data *consumers);
 
 int regulator_count_voltages(struct regulator *regulator);
-int regulator_list_voltage(struct regulator *regulator, unsigned selector);
+int regulator_list_voltage(struct regulator *regulator, unsigned int selector);
 int regulator_is_supported_voltage(struct regulator *regulator,
 				   int min_uV, int max_uV);
 unsigned int regulator_get_linear_step(struct regulator *regulator);
@@ -246,10 +246,12 @@ int regulator_allow_bypass(struct regulator *regulator, bool allow);
 
 struct regmap *regulator_get_regmap(struct regulator *regulator);
 int regulator_get_hardware_vsel_register(struct regulator *regulator,
-					 unsigned *vsel_reg,
-					 unsigned *vsel_mask);
+					 unsigned int *vsel_reg,
+					 unsigned int *vsel_mask);
 int regulator_list_hardware_vsel(struct regulator *regulator,
-				 unsigned selector);
+				 unsigned int selector);
+
+int regulator_hardware_enable(struct regulator *regulator, bool enable);
 
 /* regulator notifier block */
 int regulator_register_notifier(struct regulator *regulator,
@@ -567,14 +569,20 @@ static inline struct regmap *regulator_get_regmap(struct regulator *regulator)
 }
 
 static inline int regulator_get_hardware_vsel_register(struct regulator *regulator,
-						       unsigned *vsel_reg,
-						       unsigned *vsel_mask)
+						       unsigned int *vsel_reg,
+						       unsigned int *vsel_mask)
 {
 	return -EOPNOTSUPP;
 }
 
 static inline int regulator_list_hardware_vsel(struct regulator *regulator,
-					       unsigned selector)
+					       unsigned int selector)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int regulator_hardware_enable(struct regulator *regulator,
+					    bool enable)
 {
 	return -EOPNOTSUPP;
 }
@@ -637,7 +645,7 @@ static inline int regulator_count_voltages(struct regulator *regulator)
 	return 0;
 }
 
-static inline int regulator_list_voltage(struct regulator *regulator, unsigned selector)
+static inline int regulator_list_voltage(struct regulator *regulator, unsigned int selector)
 {
 	return -EINVAL;
 }

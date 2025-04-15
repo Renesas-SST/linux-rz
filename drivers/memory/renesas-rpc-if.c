@@ -7,12 +7,12 @@
  * Copyright (C) 2019-2020 Cogent Embedded, Inc.
  */
 
-#include <linux/bitops.h>
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
+#include <linux/of_device.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
 
@@ -25,12 +25,12 @@
 #define RPCIF_CMNCR_MOIIO1(val)	(((val) & 0x3) << 18)
 #define RPCIF_CMNCR_MOIIO0(val)	(((val) & 0x3) << 16)
 #define RPCIF_CMNCR_MOIIO(val)	(RPCIF_CMNCR_MOIIO0(val) | RPCIF_CMNCR_MOIIO1(val) | \
-				 RPCIF_CMNCR_MOIIO2(val) | RPCIF_CMNCR_MOIIO3(val))
+				RPCIF_CMNCR_MOIIO2(val) | RPCIF_CMNCR_MOIIO3(val))
 #define RPCIF_CMNCR_IO3FV(val)	(((val) & 0x3) << 14) /* documented for RZ/G2L */
 #define RPCIF_CMNCR_IO2FV(val)	(((val) & 0x3) << 12) /* documented for RZ/G2L */
 #define RPCIF_CMNCR_IO0FV(val)	(((val) & 0x3) << 8)
 #define RPCIF_CMNCR_IOFV(val)	(RPCIF_CMNCR_IO0FV(val) | RPCIF_CMNCR_IO2FV(val) | \
-				 RPCIF_CMNCR_IO3FV(val))
+				RPCIF_CMNCR_IO3FV(val))
 #define RPCIF_CMNCR_BSZ(val)	(((val) & 0x3) << 0)
 
 #define RPCIF_SSLDR		0x0004	/* R/W */
@@ -56,7 +56,7 @@
 #define RPCIF_DROPR		0x0018	/* R/W */
 
 #define RPCIF_DRENR		0x001C	/* R/W */
-#define RPCIF_DRENR_CDB(o)	(u32)((((o) & 0x3) << 30))
+#define RPCIF_DRENR_CDB(o)  ((u32)(((((o) & 0x3) << 30))))
 #define RPCIF_DRENR_OCDB(o)	(((o) & 0x3) << 28)
 #define RPCIF_DRENR_ADB(o)	(((o) & 0x3) << 24)
 #define RPCIF_DRENR_OPDB(o)	(((o) & 0x3) << 20)
@@ -136,8 +136,7 @@
 #define RPCIF_PHYCNT_DDRCAL	BIT(19)
 #define RPCIF_PHYCNT_HS		BIT(18)
 #define RPCIF_PHYCNT_CKSEL(v)	(((v) & 0x3) << 16) /* valid only for RZ/G2L */
-#define RPCIF_PHYCNT_STRTIM(v)	(((v) & 0x7) << 15 | ((v) & 0x8) << 24) /* valid for R-Car and RZ/G2{E,H,M,N} */
-
+#define RPCIF_PHYCNT_STRTIM(v)	(((v) & 0x7) << 15) /* valid for R-Car and RZ/G2{E,H,M,N} */
 #define RPCIF_PHYCNT_WBUF2	BIT(4)
 #define RPCIF_PHYCNT_WBUF	BIT(2)
 #define RPCIF_PHYCNT_PHYMEM(v)	(((v) & 0x3) << 0)
@@ -163,11 +162,6 @@ static const struct regmap_access_table rpcif_volatile_table = {
 	.n_yes_ranges	= ARRAY_SIZE(rpcif_volatile_ranges),
 };
 
-struct rpcif_info {
-	enum rpcif_type type;
-	u8 strtim;
-};
-
 struct rpcif_priv {
 	struct device *dev;
 	void __iomem *base;
@@ -176,7 +170,7 @@ struct rpcif_priv {
 	struct reset_control *rstc;
 	struct platform_device *vdev;
 	size_t size;
-	const struct rpcif_info *info;
+	enum rpcif_type type;
 	enum rpcif_data_dir dir;
 	u8 bus_size;
 	u8 xfer_size;
@@ -189,26 +183,6 @@ struct rpcif_priv {
 	u32 enable;		/* DRENR or SMENR */
 	u32 dummy;		/* DRDMCR or SMDMCR */
 	u32 ddr;		/* DRDRENR or SMDRENR */
-};
-
-static const struct rpcif_info rpcif_info_r8a7796 = {
-	.type = RPCIF_RCAR_GEN3,
-	.strtim = 6,
-};
-
-static const struct rpcif_info rpcif_info_gen3 = {
-	.type = RPCIF_RCAR_GEN3,
-	.strtim = 7,
-};
-
-static const struct rpcif_info rpcif_info_rz_g2l = {
-	.type = RPCIF_RZ_G2L,
-	.strtim = 7,
-};
-
-static const struct rpcif_info rpcif_info_gen4 = {
-	.type = RPCIF_RCAR_GEN4,
-	.strtim = 15,
 };
 
 /*
@@ -320,22 +294,22 @@ static void rpcif_rzg2l_timing_adjust_sdr(struct rpcif_priv *rpc)
 	regmap_write(rpc->regmap, RPCIF_PHYWR, 0x00008080);
 	regmap_write(rpc->regmap, RPCIF_PHYADD, 0x80000024);
 	regmap_update_bits(rpc->regmap, RPCIF_PHYCNT, RPCIF_PHYCNT_CKSEL(3),
-			   RPCIF_PHYCNT_CKSEL(3));
+			RPCIF_PHYCNT_CKSEL(3));
 	regmap_write(rpc->regmap, RPCIF_PHYWR, 0x00000030);
 	regmap_write(rpc->regmap, RPCIF_PHYADD, 0x80000032);
 }
 
-int rpcif_hw_init(struct device *dev, bool hyperflash)
+int rpcif_hw_init(struct rpcif *rpcif, bool hyperflash)
 {
-	struct rpcif_priv *rpc = dev_get_drvdata(dev);
+	struct rpcif_priv *rpc = dev_get_drvdata(rpcif->dev);
 	u32 dummy;
 	int ret;
 
-	ret = pm_runtime_resume_and_get(dev);
+	ret = pm_runtime_resume_and_get(rpc->dev);
 	if (ret)
 		return ret;
 
-	if (rpc->info->type == RPCIF_RZ_G2L) {
+	if (rpc->type == RPCIF_RZ_G2L) {
 		ret = reset_control_reset(rpc->rstc);
 		if (ret)
 			return ret;
@@ -344,45 +318,44 @@ int rpcif_hw_init(struct device *dev, bool hyperflash)
 	}
 
 	regmap_update_bits(rpc->regmap, RPCIF_PHYCNT, RPCIF_PHYCNT_PHYMEM_MASK,
-			   RPCIF_PHYCNT_PHYMEM(hyperflash ? 3 : 0));
+			RPCIF_PHYCNT_PHYMEM(hyperflash ? 3 : 0));
 
 	/* DMA Transfer is not supported */
 	regmap_update_bits(rpc->regmap, RPCIF_PHYCNT, RPCIF_PHYCNT_HS, 0);
 
-	regmap_update_bits(rpc->regmap, RPCIF_PHYCNT,
-			   /* create mask with all affected bits set */
-			   RPCIF_PHYCNT_STRTIM(BIT(fls(rpc->info->strtim)) - 1),
-			   RPCIF_PHYCNT_STRTIM(rpc->info->strtim));
+	if (rpc->type == RPCIF_RCAR_GEN3)
+		regmap_update_bits(rpc->regmap, RPCIF_PHYCNT,
+				RPCIF_PHYCNT_STRTIM(7), RPCIF_PHYCNT_STRTIM(7));
 
 	regmap_update_bits(rpc->regmap, RPCIF_PHYOFFSET1, RPCIF_PHYOFFSET1_DDRTMG(3),
-			   RPCIF_PHYOFFSET1_DDRTMG(3));
+			RPCIF_PHYOFFSET1_DDRTMG(3));
 	regmap_update_bits(rpc->regmap, RPCIF_PHYOFFSET2, RPCIF_PHYOFFSET2_OCTTMG(7),
-			   RPCIF_PHYOFFSET2_OCTTMG(4));
+			RPCIF_PHYOFFSET2_OCTTMG(4));
 
 	if (hyperflash)
 		regmap_update_bits(rpc->regmap, RPCIF_PHYINT,
-				   RPCIF_PHYINT_WPVAL, 0);
+				RPCIF_PHYINT_WPVAL, 0);
 
-	if (rpc->info->type == RPCIF_RZ_G2L)
+	if (rpc->type == RPCIF_RCAR_GEN3)
 		regmap_update_bits(rpc->regmap, RPCIF_CMNCR,
-				   RPCIF_CMNCR_MOIIO(3) | RPCIF_CMNCR_IOFV(3) |
-				   RPCIF_CMNCR_BSZ(3),
-				   RPCIF_CMNCR_MOIIO(1) | RPCIF_CMNCR_IOFV(2) |
-				   RPCIF_CMNCR_BSZ(hyperflash ? 1 : 0));
+				RPCIF_CMNCR_MOIIO(3) | RPCIF_CMNCR_BSZ(3),
+				RPCIF_CMNCR_MOIIO(3) |
+				RPCIF_CMNCR_BSZ(hyperflash ? 1 : 0));
 	else
 		regmap_update_bits(rpc->regmap, RPCIF_CMNCR,
-				   RPCIF_CMNCR_MOIIO(3) | RPCIF_CMNCR_BSZ(3),
-				   RPCIF_CMNCR_MOIIO(3) |
-				   RPCIF_CMNCR_BSZ(hyperflash ? 1 : 0));
+				RPCIF_CMNCR_MOIIO(3) | RPCIF_CMNCR_IOFV(3) |
+				RPCIF_CMNCR_BSZ(3),
+				RPCIF_CMNCR_MOIIO(1) | RPCIF_CMNCR_IOFV(2) |
+				RPCIF_CMNCR_BSZ(hyperflash ? 1 : 0));
 
 	/* Set RCF after BSZ update */
 	regmap_write(rpc->regmap, RPCIF_DRCR, RPCIF_DRCR_RCF);
 	/* Dummy read according to spec */
 	regmap_read(rpc->regmap, RPCIF_DRCR, &dummy);
 	regmap_write(rpc->regmap, RPCIF_SSLDR, RPCIF_SSLDR_SPNDL(7) |
-		     RPCIF_SSLDR_SLNDL(7) | RPCIF_SSLDR_SCKDL(7));
+			RPCIF_SSLDR_SLNDL(7) | RPCIF_SSLDR_SCKDL(7));
 
-	pm_runtime_put(dev);
+	pm_runtime_put(rpc->dev);
 
 	rpc->bus_size = hyperflash ? 2 : 1;
 
@@ -412,10 +385,10 @@ static u8 rpcif_bit_size(u8 buswidth)
 	return buswidth > 4 ? 2 : ilog2(buswidth);
 }
 
-void rpcif_prepare(struct device *dev, const struct rpcif_op *op, u64 *offs,
-		   size_t *len)
+void rpcif_prepare(struct rpcif *rpcif, const struct rpcif_op *op, u64 *offs,
+		size_t *len)
 {
-	struct rpcif_priv *rpc = dev_get_drvdata(dev);
+	struct rpcif_priv *rpc = dev_get_drvdata(rpcif->dev);
 
 	rpc->smcr = 0;
 	rpc->smadr = 0;
@@ -499,20 +472,20 @@ void rpcif_prepare(struct device *dev, const struct rpcif_op *op, u64 *offs,
 }
 EXPORT_SYMBOL(rpcif_prepare);
 
-int rpcif_manual_xfer(struct device *dev)
+int rpcif_manual_xfer(struct rpcif *rpcif)
 {
-	struct rpcif_priv *rpc = dev_get_drvdata(dev);
+	struct rpcif_priv *rpc = dev_get_drvdata(rpcif->dev);
 	u32 smenr, smcr, pos = 0, max = rpc->bus_size == 2 ? 8 : 4;
 	int ret = 0;
 
-	ret = pm_runtime_resume_and_get(dev);
+	ret = pm_runtime_resume_and_get(rpc->dev);
 	if (ret < 0)
 		return ret;
 
 	regmap_update_bits(rpc->regmap, RPCIF_PHYCNT,
-			   RPCIF_PHYCNT_CAL, RPCIF_PHYCNT_CAL);
+			RPCIF_PHYCNT_CAL, RPCIF_PHYCNT_CAL);
 	regmap_update_bits(rpc->regmap, RPCIF_CMNCR,
-			   RPCIF_CMNCR_MD, RPCIF_CMNCR_MD);
+			RPCIF_CMNCR_MD, RPCIF_CMNCR_MD);
 	regmap_write(rpc->regmap, RPCIF_SMCMR, rpc->command);
 	regmap_write(rpc->regmap, RPCIF_SMOPR, rpc->option);
 	regmap_write(rpc->regmap, RPCIF_SMDMCR, rpc->dummy);
@@ -563,15 +536,15 @@ int rpcif_manual_xfer(struct device *dev)
 			u32 dummy;
 
 			regmap_update_bits(rpc->regmap, RPCIF_CMNCR,
-					   RPCIF_CMNCR_MD, 0);
+					RPCIF_CMNCR_MD, 0);
 			regmap_write(rpc->regmap, RPCIF_DRCR,
-				     RPCIF_DRCR_RBURST(32) | RPCIF_DRCR_RBE);
+					RPCIF_DRCR_RBURST(32) | RPCIF_DRCR_RBE);
 			regmap_write(rpc->regmap, RPCIF_DRCMR, rpc->command);
 			regmap_write(rpc->regmap, RPCIF_DREAR,
-				     RPCIF_DREAR_EAC(1));
+					RPCIF_DREAR_EAC(1));
 			regmap_write(rpc->regmap, RPCIF_DROPR, rpc->option);
 			regmap_write(rpc->regmap, RPCIF_DRENR,
-				     smenr & ~RPCIF_SMENR_SPIDE(0xF));
+					smenr & ~RPCIF_SMENR_SPIDE(0xF));
 			regmap_write(rpc->regmap, RPCIF_DRDMCR,  rpc->dummy);
 			regmap_write(rpc->regmap, RPCIF_DRDRENR, rpc->ddr);
 			memcpy_fromio(rpc->buffer, rpc->dirmap, rpc->xferlen);
@@ -588,12 +561,12 @@ int rpcif_manual_xfer(struct device *dev)
 			nbytes = bytes_left >= max ? max : (1 << ilog2(bytes_left));
 
 			regmap_write(rpc->regmap, RPCIF_SMADR,
-				     rpc->smadr + pos);
+					rpc->smadr + pos);
 			smenr &= ~RPCIF_SMENR_SPIDE(0xF);
 			smenr |= RPCIF_SMENR_SPIDE(rpcif_bits_set(rpc, nbytes));
 			regmap_write(rpc->regmap, RPCIF_SMENR, smenr);
 			regmap_write(rpc->regmap, RPCIF_SMCR,
-				     rpc->smcr | RPCIF_SMCR_SPIE);
+					rpc->smcr | RPCIF_SMCR_SPIE);
 			rpc->xfer_size = nbytes;
 			ret = wait_msg_xfer_end(rpc);
 			if (ret)
@@ -610,20 +583,20 @@ int rpcif_manual_xfer(struct device *dev)
 	default:
 		regmap_write(rpc->regmap, RPCIF_SMENR, rpc->enable);
 		regmap_write(rpc->regmap, RPCIF_SMCR,
-			     rpc->smcr | RPCIF_SMCR_SPIE);
+				rpc->smcr | RPCIF_SMCR_SPIE);
 		ret = wait_msg_xfer_end(rpc);
 		if (ret)
 			goto err_out;
 	}
 
 exit:
-	pm_runtime_put(dev);
+	pm_runtime_put(rpc->dev);
 	return ret;
 
 err_out:
 	if (reset_control_reset(rpc->rstc))
-		dev_err(dev, "Failed to reset HW\n");
-	rpcif_hw_init(dev, rpc->bus_size == 2);
+		dev_err(rpc->dev, "Failed to reset HW\n");
+	rpcif_hw_init(rpcif, rpc->bus_size == 2);
 	goto exit;
 }
 EXPORT_SYMBOL(rpcif_manual_xfer);
@@ -670,9 +643,9 @@ static void memcpy_fromio_readw(void *to,
 	}
 }
 
-ssize_t rpcif_dirmap_read(struct device *dev, u64 offs, size_t len, void *buf)
+ssize_t rpcif_dirmap_read(struct rpcif *rpcif, u64 offs, size_t len, void *buf)
 {
-	struct rpcif_priv *rpc = dev_get_drvdata(dev);
+	struct rpcif_priv *rpc = dev_get_drvdata(rpcif->dev);
 	loff_t from = offs & (rpc->size - 1);
 	size_t size = rpc->size - from;
 	int ret;
@@ -680,7 +653,7 @@ ssize_t rpcif_dirmap_read(struct device *dev, u64 offs, size_t len, void *buf)
 	if (len > size)
 		len = size;
 
-	ret = pm_runtime_resume_and_get(dev);
+	ret = pm_runtime_resume_and_get(rpc->dev);
 	if (ret < 0)
 		return ret;
 
@@ -688,10 +661,10 @@ ssize_t rpcif_dirmap_read(struct device *dev, u64 offs, size_t len, void *buf)
 	regmap_write(rpc->regmap, RPCIF_DRCR, 0);
 	regmap_write(rpc->regmap, RPCIF_DRCMR, rpc->command);
 	regmap_write(rpc->regmap, RPCIF_DREAR,
-		     RPCIF_DREAR_EAV(offs >> 25) | RPCIF_DREAR_EAC(1));
+			RPCIF_DREAR_EAV(offs >> 25) | RPCIF_DREAR_EAC(1));
 	regmap_write(rpc->regmap, RPCIF_DROPR, rpc->option);
 	regmap_write(rpc->regmap, RPCIF_DRENR,
-		     rpc->enable & ~RPCIF_SMENR_SPIDE(0xF));
+			rpc->enable & ~RPCIF_SMENR_SPIDE(0xF));
 	regmap_write(rpc->regmap, RPCIF_DRDMCR, rpc->dummy);
 	regmap_write(rpc->regmap, RPCIF_DRDRENR, rpc->ddr);
 
@@ -700,7 +673,7 @@ ssize_t rpcif_dirmap_read(struct device *dev, u64 offs, size_t len, void *buf)
 	else
 		memcpy_fromio(buf, rpc->dirmap + from, len);
 
-	pm_runtime_put(dev);
+	pm_runtime_put(rpc->dev);
 
 	return len;
 }
@@ -716,9 +689,9 @@ static int rpcif_probe(struct platform_device *pdev)
 	const char *name;
 	int ret;
 
-	flash = of_get_next_child(dev->of_node, NULL);
+	flash = of_get_next_child(pdev->dev.of_node, NULL);
 	if (!flash) {
-		dev_warn(dev, "no flash node found\n");
+		dev_warn(&pdev->dev, "no flash node found\n");
 		return -ENODEV;
 	}
 
@@ -728,12 +701,12 @@ static int rpcif_probe(struct platform_device *pdev)
 		name = "rpc-if-hyperflash";
 	} else	{
 		of_node_put(flash);
-		dev_warn(dev, "unknown flash type\n");
+		dev_warn(&pdev->dev, "unknown flash type\n");
 		return -ENODEV;
 	}
 	of_node_put(flash);
 
-	rpc = devm_kzalloc(dev, sizeof(*rpc), GFP_KERNEL);
+	rpc = devm_kzalloc(&pdev->dev, sizeof(*rpc), GFP_KERNEL);
 	if (!rpc)
 		return -ENOMEM;
 
@@ -752,9 +725,9 @@ static int rpcif_probe(struct platform_device *pdev)
 	rpc->dirmap = devm_ioremap_resource(dev, res);
 	if (IS_ERR(rpc->dirmap))
 		return PTR_ERR(rpc->dirmap);
-
 	rpc->size = resource_size(res);
-	rpc->info = of_device_get_match_data(dev);
+
+	rpc->type = (uintptr_t)of_device_get_match_data(dev);
 	rpc->rstc = devm_reset_control_get_exclusive(dev, NULL);
 	if (IS_ERR(rpc->rstc))
 		return PTR_ERR(rpc->rstc);
@@ -762,9 +735,9 @@ static int rpcif_probe(struct platform_device *pdev)
 	vdev = platform_device_alloc(name, pdev->id);
 	if (!vdev)
 		return -ENOMEM;
-	vdev->dev.parent = dev;
+	vdev->dev.parent = &pdev->dev;
 
-	rpc->dev = dev;
+	rpc->dev = &pdev->dev;
 	rpc->vdev = vdev;
 	platform_set_drvdata(pdev, rpc);
 
@@ -777,25 +750,25 @@ static int rpcif_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static void rpcif_remove(struct platform_device *pdev)
+static int rpcif_remove(struct platform_device *pdev)
 {
 	struct rpcif_priv *rpc = platform_get_drvdata(pdev);
 
 	platform_device_unregister(rpc->vdev);
+
+	return 0;
 }
 
 static const struct of_device_id rpcif_of_match[] = {
-	{ .compatible = "renesas,r8a7796-rpc-if", .data = &rpcif_info_r8a7796 },
-	{ .compatible = "renesas,rcar-gen3-rpc-if", .data = &rpcif_info_gen3 },
-	{ .compatible = "renesas,rcar-gen4-rpc-if", .data = &rpcif_info_gen4 },
-	{ .compatible = "renesas,rzg2l-rpc-if", .data = &rpcif_info_rz_g2l },
+	{ .compatible = "renesas,rcar-gen3-rpc-if", .data = (void *)RPCIF_RCAR_GEN3 },
+	{ .compatible = "renesas,rzg2l-rpc-if", .data = (void *)RPCIF_RZ_G2L },
 	{},
 };
 MODULE_DEVICE_TABLE(of, rpcif_of_match);
 
 static struct platform_driver rpcif_driver = {
 	.probe	= rpcif_probe,
-	.remove_new = rpcif_remove,
+	.remove	= rpcif_remove,
 	.driver = {
 		.name =	"rpc-if",
 		.of_match_table = rpcif_of_match,

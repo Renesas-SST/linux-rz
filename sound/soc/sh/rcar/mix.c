@@ -295,6 +295,7 @@ int rsnd_mix_probe(struct rsnd_priv *priv)
 	char name[MIX_NAME_SIZE];
 	int i, nr, ret;
 
+
 	node = rsnd_mix_of_node(priv);
 	if (!node)
 		return 0; /* not used is not error */
@@ -330,7 +331,7 @@ int rsnd_mix_probe(struct rsnd_priv *priv)
 		}
 
 		ret = rsnd_mod_init(priv, rsnd_mod_get(mix), &rsnd_mix_ops,
-				    clk, RSND_MOD_MIX, i);
+				    clk, NULL, RSND_MOD_MIX, i);
 		if (ret) {
 			of_node_put(np);
 			goto rsnd_mix_probe_done;

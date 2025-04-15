@@ -143,6 +143,7 @@ static unsigned int renesas_sdhi_clk_update(struct tmio_mmc_host *host,
 		/* HS400 with 4TAP needs different clock settings */
 		bool use_4tap = sdhi_has_quirk(priv, hs400_4taps);
 		bool need_slow_clkh = host->mmc->ios.timing == MMC_TIMING_MMC_HS400;
+
 		clkh_shift = use_4tap && need_slow_clkh ? 1 : 2;
 		ref_clk = priv->clkh;
 	}
@@ -256,6 +257,11 @@ static int renesas_sdhi_start_signal_voltage_switch(struct mmc_host *mmc,
 	struct pinctrl_state *pin_state;
 	int ret;
 
+	if (priv->no_pin_volt_switch) {
+		ret = mmc_regulator_set_vqmmc(host->mmc, ios);
+		return (ret < 0) ? ret : 0;
+	}
+
 	switch (ios->signal_voltage) {
 	case MMC_SIGNAL_VOLTAGE_330:
 		pin_state = priv->pins_default;
@@ -272,8 +278,7 @@ static int renesas_sdhi_start_signal_voltage_switch(struct mmc_host *mmc,
 	 * 3.3V and succeed/fail accordingly.
 	 */
 	if (IS_ERR(priv->pinctrl) || IS_ERR(pin_state))
-		return ios->signal_voltage ==
-			MMC_SIGNAL_VOLTAGE_330 ? 0 : -EINVAL;
+		return ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330 ? 0 : -EINVAL;
 
 	ret = mmc_regulator_set_vqmmc(host->mmc, ios);
 	if (ret < 0)
@@ -714,6 +719,9 @@ static int renesas_sdhi_execute_tuning(struct mmc_host *mmc, u32 opcode)
 
 		if (cmd_error)
 			mmc_send_abort_tuning(mmc, opcode);
+
+		/* FIXME: Needed for some SD cards. The reason is not known yet */
+		usleep_range(1000, 2500);
 	}
 
 	ret = renesas_sdhi_select_tuning(host);
@@ -958,12 +966,16 @@ int renesas_sdhi_probe(struct platform_device *pdev,
 	if (IS_ERR(priv->rstc))
 		return PTR_ERR(priv->rstc);
 
-	priv->pinctrl = devm_pinctrl_get(&pdev->dev);
-	if (!IS_ERR(priv->pinctrl)) {
-		priv->pins_default = pinctrl_lookup_state(priv->pinctrl,
+	priv->no_pin_volt_switch = device_property_read_bool(&pdev->dev,
+			"mmc-no-pin-volt-switch");
+	if (!priv->no_pin_volt_switch) {
+		priv->pinctrl = devm_pinctrl_get(&pdev->dev);
+		if (!IS_ERR(priv->pinctrl)) {
+			priv->pins_default = pinctrl_lookup_state(priv->pinctrl,
 						PINCTRL_STATE_DEFAULT);
-		priv->pins_uhs = pinctrl_lookup_state(priv->pinctrl,
+			priv->pins_uhs = pinctrl_lookup_state(priv->pinctrl,
 						"state_uhs");
+		}
 	}
 
 	host = tmio_mmc_host_alloc(pdev, mmc_data);

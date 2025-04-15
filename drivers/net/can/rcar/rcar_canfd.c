@@ -187,6 +187,7 @@
 
 /* RSCFDnCFDCmDCFG */
 #define RCANFD_DCFG_DSJW(gpriv, x)	(((x) & reg_gen4(gpriv, 0xf, 0x7)) << 24)
+#define RCANFD_DCFG_DSJW_V2H(x)		(((x) & 0x7) << 24)
 
 #define RCANFD_DCFG_DTSEG2(gpriv, x) \
 	(((x) & reg_gen4(gpriv, 0x0f, 0x7)) << reg_gen4(gpriv, 16, 20))
@@ -235,6 +236,8 @@
 /* RSCFDnCFDCFCCk */
 #define RCANFD_CFCC_CFTML(gpriv, x)	\
 	(((x) & reg_gen4(gpriv, 0x1f, 0xf)) << reg_gen4(gpriv, 16, 20))
+#define RCANFD_CFCC_CFTML_V2H(gpriv, x)	\
+	(((x) & 0xf) << reg_gen4(gpriv, 16, 20))
 #define RCANFD_CFCC_CFM(gpriv, x)	(((x) & 0x3) << reg_gen4(gpriv,  8, 16))
 #define RCANFD_CFCC_CFIM		BIT(12)
 #define RCANFD_CFCC_CFDC(gpriv, x)	(((x) & 0x7) << reg_gen4(gpriv, 21,  8))
@@ -430,6 +433,7 @@
 #define RCANFD_C_RPGACC(r)		(0x1900 + (0x04 * (r)))
 
 /* R-Car Gen4 Classical and CAN FD mode specific register map */
+#define RCANFD_V2H_CFDCFG		(0x1314)
 #define RCANFD_GEN4_FDCFG(m)		(0x1404 + (0x20 * (m)))
 
 #define RCANFD_GEN4_GAFL_OFFSET		(0x1800)
@@ -438,6 +442,7 @@
 
 /* RSCFDnCFDCmXXX -> RCANFD_F_XXX(m) */
 #define RCANFD_F_DCFG(gpriv, m)		(reg_gen4(gpriv, 0x1400, 0x0500) + (0x20 * (m)))
+#define RCANFD_F_DCFG_V2H(m)		(0x0500 + (0x20 * (m)))
 #define RCANFD_F_CFDCFG(m)		(0x0504 + (0x20 * (m)))
 #define RCANFD_F_CFDCTR(m)		(0x0508 + (0x20 * (m)))
 #define RCANFD_F_CFDSTS(m)		(0x050c + (0x20 * (m)))
@@ -545,6 +550,7 @@ struct rcar_canfd_global {
 	struct platform_device *pdev;	/* Respective platform device */
 	struct clk *clkp;		/* Peripheral clock */
 	struct clk *can_clk;		/* fCAN clock */
+	struct clk *clk_ram;		/* Clock RAM */
 	enum rcar_canfd_fcanclk fcan;	/* CANFD or Ext clock */
 	unsigned long channels_mask;	/* Enabled channels mask */
 	bool fdmode;			/* CAN FD or Classical CAN only mode */
@@ -598,6 +604,12 @@ static const struct rcar_canfd_hw_info rcar_gen3_hw_info = {
 	.shared_global_irqs = 1,
 };
 
+static const struct rcar_canfd_hw_info r9a09g057_hw_info = {
+	.max_channels = 6,
+	.postdiv = 1,
+	.multi_channel_irqs = 1,
+};
+
 static const struct rcar_canfd_hw_info rcar_gen4_hw_info = {
 	.max_channels = 8,
 	.postdiv = 2,
@@ -616,10 +628,20 @@ static inline bool is_gen4(struct rcar_canfd_global *gpriv)
 	return gpriv->info == &rcar_gen4_hw_info;
 }
 
+static inline bool is_rzv2h(struct rcar_canfd_global *gpriv)
+{
+	return gpriv->info == &r9a09g057_hw_info;
+}
+
+static inline bool is_gen4_type(struct rcar_canfd_global *gpriv)
+{
+	return (is_gen4(gpriv) || is_rzv2h(gpriv));
+}
+
 static inline u32 reg_gen4(struct rcar_canfd_global *gpriv,
 			   u32 gen4, u32 not_gen4)
 {
-	return is_gen4(gpriv) ? gen4 : not_gen4;
+	return is_gen4_type(gpriv) ? gen4 : not_gen4;
 }
 
 static inline void rcar_canfd_update(u32 mask, u32 val, u32 __iomem *reg)
@@ -689,7 +711,7 @@ static void rcar_canfd_tx_failure_cleanup(struct net_device *ndev)
 
 static void rcar_canfd_set_mode(struct rcar_canfd_global *gpriv)
 {
-	if (is_gen4(gpriv)) {
+	if (is_gen4_type(gpriv)) {
 		u32 ch, val = gpriv->fdmode ? RCANFD_GEN4_FDCFG_FDOE
 					    : RCANFD_GEN4_FDCFG_CLOE;
 
@@ -759,6 +781,18 @@ static int rcar_canfd_reset_controller(struct rcar_canfd_global *gpriv)
 				"channel %u reset failed\n", ch);
 			return err;
 		}
+
+		/* Set mode for the RZ/V2H controller */
+		if (is_rzv2h(gpriv)) {
+			if (gpriv->fdmode)
+				rcar_canfd_set_bit(gpriv->base,
+						   RCANFD_GEN4_FDCFG(ch),
+						   RCANFD_GEN4_FDCFG_FDOE);
+			else
+				rcar_canfd_set_bit(gpriv->base,
+						   RCANFD_GEN4_FDCFG(ch),
+						   RCANFD_GEN4_FDCFG_CLOE);
+		}
 	}
 	return 0;
 }
@@ -777,8 +811,10 @@ static void rcar_canfd_configure_controller(struct rcar_canfd_global *gpriv)
 		cfg |= RCANFD_GCFG_CMPOC;
 
 	/* Set External Clock if selected */
-	if (gpriv->fcan != RCANFD_CANFDCLK)
-		cfg |= RCANFD_GCFG_DCS;
+	if (!is_rzv2h(gpriv)) {
+		if (gpriv->fcan != RCANFD_CANFDCLK)
+			cfg |= RCANFD_GCFG_DCS;
+	}
 
 	rcar_canfd_set_bit(gpriv->base, RCANFD_GCFG, cfg);
 
@@ -793,7 +829,7 @@ static void rcar_canfd_configure_controller(struct rcar_canfd_global *gpriv)
 }
 
 static void rcar_canfd_configure_afl_rules(struct rcar_canfd_global *gpriv,
-					   u32 ch)
+					   u32 ch, int num_ch_enabled)
 {
 	u32 cfg;
 	int offset, start, page, num_rules = RCANFD_CHANNEL_NUMRULES;
@@ -816,7 +852,7 @@ static void rcar_canfd_configure_afl_rules(struct rcar_canfd_global *gpriv,
 	/* Write number of rules for channel */
 	rcar_canfd_set_bit(gpriv->base, RCANFD_GAFLCFG(ch),
 			   RCANFD_GAFLCFG_SETRNC(gpriv, ch, num_rules));
-	if (is_gen4(gpriv))
+	if (is_gen4_type(gpriv))
 		offset = RCANFD_GEN4_GAFL_OFFSET;
 	else if (gpriv->fdmode)
 		offset = RCANFD_F_GAFL_OFFSET;
@@ -824,13 +860,13 @@ static void rcar_canfd_configure_afl_rules(struct rcar_canfd_global *gpriv,
 		offset = RCANFD_C_GAFL_OFFSET;
 
 	/* Accept all IDs */
-	rcar_canfd_write(gpriv->base, RCANFD_GAFLID(offset, start), 0);
+	rcar_canfd_write(gpriv->base, RCANFD_GAFLID(offset, num_ch_enabled), 0);
 	/* IDE or RTR is not considered for matching */
-	rcar_canfd_write(gpriv->base, RCANFD_GAFLM(offset, start), 0);
+	rcar_canfd_write(gpriv->base, RCANFD_GAFLM(offset, num_ch_enabled), 0);
 	/* Any data length accepted */
-	rcar_canfd_write(gpriv->base, RCANFD_GAFLP0(offset, start), 0);
+	rcar_canfd_write(gpriv->base, RCANFD_GAFLP0(offset, num_ch_enabled), 0);
 	/* Place the msg in corresponding Rx FIFO entry */
-	rcar_canfd_set_bit(gpriv->base, RCANFD_GAFLP1(offset, start),
+	rcar_canfd_set_bit(gpriv->base, RCANFD_GAFLP1(offset, num_ch_enabled),
 			   RCANFD_GAFLP1_GAFLFDP(ridx));
 
 	/* Disable write access to page */
@@ -877,9 +913,14 @@ static void rcar_canfd_configure_tx(struct rcar_canfd_global *gpriv, u32 ch)
 	else
 		cfpls = 0;	/* b000 - Max 8 bytes payload */
 
-	cfg = (RCANFD_CFCC_CFTML(gpriv, cftml) | RCANFD_CFCC_CFM(gpriv, cfm) |
-		RCANFD_CFCC_CFIM | RCANFD_CFCC_CFDC(gpriv, cfdc) |
-		RCANFD_CFCC_CFPLS(cfpls) | RCANFD_CFCC_CFTXIE);
+	if (is_rzv2h(gpriv))
+		cfg = (RCANFD_CFCC_CFTML_V2H(gpriv, cftml) | RCANFD_CFCC_CFM(gpriv, cfm) |
+			RCANFD_CFCC_CFIM | RCANFD_CFCC_CFDC(gpriv, cfdc) |
+			RCANFD_CFCC_CFPLS(cfpls) | RCANFD_CFCC_CFTXIE);
+	else
+		cfg = (RCANFD_CFCC_CFTML(gpriv, cftml) | RCANFD_CFCC_CFM(gpriv, cfm) |
+			RCANFD_CFCC_CFIM | RCANFD_CFCC_CFDC(gpriv, cfdc) |
+			RCANFD_CFCC_CFPLS(cfpls) | RCANFD_CFCC_CFTXIE);
 	rcar_canfd_write(gpriv->base, RCANFD_CFCC(gpriv, ch, RCANFD_CFFIFO_IDX), cfg);
 
 	if (gpriv->fdmode)
@@ -1344,15 +1385,21 @@ static void rcar_canfd_set_bittiming(struct net_device *dev)
 		tseg1 = dbt->prop_seg + dbt->phase_seg1 - 1;
 		tseg2 = dbt->phase_seg2 - 1;
 
-		cfg = (RCANFD_DCFG_DTSEG1(gpriv, tseg1) | RCANFD_DCFG_DBRP(brp) |
-		       RCANFD_DCFG_DSJW(gpriv, sjw) | RCANFD_DCFG_DTSEG2(gpriv, tseg2));
+		if (is_rzv2h(gpriv)) {
+			cfg = (RCANFD_DCFG_DTSEG1(gpriv, tseg1) | RCANFD_DCFG_DBRP(brp) |
+				RCANFD_DCFG_DSJW_V2H(sjw) | RCANFD_DCFG_DTSEG2(gpriv, tseg2));
+			rcar_canfd_write(priv->base, RCANFD_F_DCFG_V2H(ch), cfg);
+		} else {
+			cfg = (RCANFD_DCFG_DTSEG1(gpriv, tseg1) | RCANFD_DCFG_DBRP(brp) |
+				RCANFD_DCFG_DSJW(gpriv, sjw) | RCANFD_DCFG_DTSEG2(gpriv, tseg2));
+			rcar_canfd_write(priv->base, RCANFD_F_DCFG(gpriv, ch), cfg);
+		}
 
-		rcar_canfd_write(priv->base, RCANFD_F_DCFG(gpriv, ch), cfg);
 		netdev_dbg(priv->ndev, "drate: brp %u, sjw %u, tseg1 %u, tseg2 %u\n",
 			   brp, sjw, tseg1, tseg2);
 	} else {
 		/* Classical CAN only mode */
-		if (is_gen4(gpriv)) {
+		if (is_gen4_type(gpriv)) {
 			cfg = (RCANFD_NCFG_NTSEG1(gpriv, tseg1) |
 			       RCANFD_NCFG_NBRP(brp) |
 			       RCANFD_NCFG_NSJW(gpriv, sjw) |
@@ -1517,7 +1564,7 @@ static netdev_tx_t rcar_canfd_start_xmit(struct sk_buff *skb,
 
 	dlc = RCANFD_CFPTR_CFDLC(can_fd_len2dlc(cf->len));
 
-	if ((priv->can.ctrlmode & CAN_CTRLMODE_FD) || is_gen4(gpriv)) {
+	if ((priv->can.ctrlmode & CAN_CTRLMODE_FD) || is_gen4_type(gpriv)) {
 		rcar_canfd_write(priv->base,
 				 RCANFD_F_CFID(gpriv, ch, RCANFD_CFFIFO_IDX), id);
 		rcar_canfd_write(priv->base,
@@ -1576,7 +1623,7 @@ static void rcar_canfd_rx_pkt(struct rcar_canfd_channel *priv)
 	u32 ch = priv->channel;
 	u32 ridx = ch + RCANFD_RFFIFO_IDX;
 
-	if ((priv->can.ctrlmode & CAN_CTRLMODE_FD) || is_gen4(gpriv)) {
+	if ((priv->can.ctrlmode & CAN_CTRLMODE_FD) || is_gen4_type(gpriv)) {
 		id = rcar_canfd_read(priv->base, RCANFD_F_RFID(gpriv, ridx));
 		dlc = rcar_canfd_read(priv->base, RCANFD_F_RFPTR(gpriv, ridx));
 
@@ -1627,7 +1674,7 @@ static void rcar_canfd_rx_pkt(struct rcar_canfd_channel *priv)
 		cf->len = can_cc_dlc2len(RCANFD_RFPTR_RFDLC(dlc));
 		if (id & RCANFD_RFID_RFRTR)
 			cf->can_id |= CAN_RTR_FLAG;
-		else if (is_gen4(gpriv))
+		else if (is_gen4_type(gpriv))
 			rcar_canfd_get_data(priv, cf, RCANFD_F_RFDF(gpriv, ridx, 0));
 		else
 			rcar_canfd_get_data(priv, cf, RCANFD_C_RFDF(ridx, 0));
@@ -1753,13 +1800,18 @@ static int rcar_canfd_channel_probe(struct rcar_canfd_global *gpriv, u32 ch,
 		int err_irq;
 		int tx_irq;
 
-		err_irq = platform_get_irq_byname(pdev, ch == 0 ? "ch0_err" : "ch1_err");
+		char err_name[10], tx_name[10];
+
+		sprintf(err_name, "ch%u_err", ch);
+		sprintf(tx_name, "ch%u_trx", ch);
+
+		err_irq = platform_get_irq_byname(pdev, err_name);
 		if (err_irq < 0) {
 			err = err_irq;
 			goto fail;
 		}
 
-		tx_irq = platform_get_irq_byname(pdev, ch == 0 ? "ch0_trx" : "ch1_trx");
+		tx_irq = platform_get_irq_byname(pdev, tx_name);
 		if (tx_irq < 0) {
 			err = tx_irq;
 			goto fail;
@@ -1856,7 +1908,7 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 	struct device_node *of_child;
 	unsigned long channels_mask = 0;
 	int err, ch_irq, g_irq;
-	int g_err_irq, g_recc_irq;
+	int g_err_irq, g_recc_irq, num_ch_enabled = 0;
 	bool fdmode = true;			/* CAN FD only mode - default */
 	char name[9] = "channelX";
 	int i;
@@ -1872,7 +1924,7 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 		if (of_child && of_device_is_available(of_child)) {
 			channels_mask |= BIT(i);
 			transceivers[i] = devm_of_phy_optional_get(dev,
-							of_child, NULL);
+								   of_child, NULL);
 		}
 		of_node_put(of_child);
 		if (IS_ERR(transceivers[i]))
@@ -1930,6 +1982,16 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 	if (IS_ERR(gpriv->clkp))
 		return dev_err_probe(dev, PTR_ERR(gpriv->clkp),
 				     "cannot get peripheral clock\n");
+
+	/* RAM clock */
+	if (is_rzv2h(gpriv)) {
+		gpriv->clk_ram = devm_clk_get(&pdev->dev, "clk_ram");
+	if (IS_ERR(gpriv->clk_ram)) {
+		err = PTR_ERR(gpriv->clk_ram);
+		dev_err(&pdev->dev, "cannot get clock RAM, error %d\n", err);
+		goto fail_dev;
+	}
+}
 
 	/* fCAN clock: Pick External clock. If not available fallback to
 	 * CANFD clock
@@ -2007,6 +2069,16 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 		goto fail_dev;
 	}
 
+	if (is_rzv2h(gpriv)) {
+		/* Enable RAM clock */
+		err = clk_prepare_enable(gpriv->clk_ram);
+		if (err) {
+			dev_err(&pdev->dev,
+				"failed to enable peripheral clock, error %d\n", err);
+			goto fail_reset;
+		}
+	}
+
 	/* Enable peripheral clock for register access */
 	err = clk_prepare_enable(gpriv->clkp);
 	if (err) {
@@ -2033,7 +2105,8 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 		rcar_canfd_configure_tx(gpriv, ch);
 
 		/* Configure receive rules */
-		rcar_canfd_configure_afl_rules(gpriv, ch);
+		rcar_canfd_configure_afl_rules(gpriv, ch, num_ch_enabled);
+		num_ch_enabled++;
 	}
 
 	/* Configure common interrupts */
@@ -2070,6 +2143,7 @@ fail_mode:
 	rcar_canfd_disable_global_interrupts(gpriv);
 fail_clk:
 	clk_disable_unprepare(gpriv->clkp);
+	clk_disable_unprepare(gpriv->clk_ram);
 fail_reset:
 	reset_control_assert(gpriv->rstc1);
 	reset_control_assert(gpriv->rstc2);
@@ -2115,6 +2189,7 @@ static const __maybe_unused struct of_device_id rcar_canfd_of_table[] = {
 	{ .compatible = "renesas,rcar-gen3-canfd", .data = &rcar_gen3_hw_info },
 	{ .compatible = "renesas,rcar-gen4-canfd", .data = &rcar_gen4_hw_info },
 	{ .compatible = "renesas,rzg2l-canfd", .data = &rzg2l_hw_info },
+	{ .compatible = "renesas,r9a09g057-canfd", .data = &r9a09g057_hw_info },
 	{ }
 };
 

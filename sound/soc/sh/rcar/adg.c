@@ -5,6 +5,7 @@
 //  Copyright (C) 2013  Kuninori Morimoto <kuninori.morimoto.gx@renesas.com>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
+#include <linux/reset.h>
 #include "rsnd.h"
 
 #define CLKA	0
@@ -21,6 +22,7 @@
 
 #define BRRx_MASK(x) (0x3FF & x)
 
+#define ADG_NAME "adg"
 static struct rsnd_mod_ops adg_ops = {
 	.name = "adg",
 };
@@ -732,14 +734,19 @@ int rsnd_adg_probe(struct rsnd_priv *priv)
 {
 	struct rsnd_adg *adg;
 	struct device *dev = rsnd_priv_to_dev(priv);
+	struct reset_control *rstc;
 	int ret;
 
 	adg = devm_kzalloc(dev, sizeof(*adg), GFP_KERNEL);
 	if (!adg)
 		return -ENOMEM;
 
+	rstc = devm_reset_control_get_optional(dev, ADG_NAME);
+	if (IS_ERR(rstc))
+		dev_dbg(dev, "failed to get cpg reset\n");
+
 	ret = rsnd_mod_init(priv, &adg->mod, &adg_ops,
-		      NULL, 0, 0);
+		      NULL, rstc, 0, 0);
 	if (ret)
 		return ret;
 

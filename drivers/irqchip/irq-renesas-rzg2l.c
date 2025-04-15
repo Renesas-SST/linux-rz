@@ -19,6 +19,7 @@
 #include <linux/reset.h>
 #include <linux/spinlock.h>
 #include <linux/syscore_ops.h>
+#include <linux/irqchip/icu-v2h.h>
 
 #define IRQC_IRQ_START			1
 #define IRQC_IRQ_COUNT			8
@@ -52,6 +53,10 @@
 #define IITSR_IITSEL_EDGE_RISING	2
 #define IITSR_IITSEL_EDGE_BOTH		3
 #define IITSR_IITSEL_MASK(n)		IITSR_IITSEL((n), 3)
+
+#define DMxSELy(x, y)	(0x0420 + (x) * 0x0020 + (y) * 0x0004) /* DMACx Factor Selection Register y */
+#define DMACKSEL(x)	(0x0500 + (x) * 0x0004) /* DMAC ACK Selection Register x */
+#define DMTENDSEL(x)	(0x055C + (x) * 0x0004) /* DMAC TEND Selection Register x */
 
 #define TINT_EXTRACT_HWIRQ(x)		FIELD_GET(GENMASK(15, 0), (x))
 #define TINT_EXTRACT_GPIOINT(x)		FIELD_GET(GENMASK(31, 16), (x))
@@ -231,7 +236,7 @@ static u32 rzg2l_disable_tint_and_set_tint_source(struct irq_data *d, struct rzg
 	return reg | tien;
 }
 
-static int rzg2l_tint_set_edge(struct irq_data *d, unsigned int type)
+static int rzg2l_tint_set_type(struct irq_data *d, unsigned int type)
 {
 	struct rzg2l_irqc_priv *priv = irq_data_to_priv(d);
 	unsigned int hwirq = irqd_to_hwirq(d);
@@ -248,6 +253,14 @@ static int rzg2l_tint_set_edge(struct irq_data *d, unsigned int type)
 
 	case IRQ_TYPE_EDGE_FALLING:
 		sense = TITSR_TITSEL_EDGE_FALLING;
+		break;
+
+	case IRQ_TYPE_LEVEL_HIGH:
+		sense = TITSR_TITSEL_LEVEL_HIGH;
+		break;
+
+	case IRQ_TYPE_LEVEL_LOW:
+		sense = TITSR_TITSEL_LEVEL_LOW;
 		break;
 
 	default:
@@ -282,7 +295,7 @@ static int rzg2l_irqc_set_type(struct irq_data *d, unsigned int type)
 	if (hw_irq >= IRQC_IRQ_START && hw_irq <= IRQC_IRQ_COUNT)
 		ret = rzg2l_irq_set_type(d, type);
 	else if (hw_irq >= IRQC_TINT_START && hw_irq < IRQC_NUM_IRQ)
-		ret = rzg2l_tint_set_edge(d, type);
+		ret = rzg2l_tint_set_type(d, type);
 	if (ret)
 		return ret;
 
@@ -421,6 +434,8 @@ static int rzg2l_irqc_init(struct device_node *node, struct device_node *parent)
 	rzg2l_irqc_data = devm_kzalloc(&pdev->dev, sizeof(*rzg2l_irqc_data), GFP_KERNEL);
 	if (!rzg2l_irqc_data)
 		return -ENOMEM;
+
+	platform_set_drvdata(pdev, rzg2l_irqc_data);
 
 	rzg2l_irqc_data->base = devm_of_iomap(&pdev->dev, pdev->dev.of_node, 0, NULL);
 	if (IS_ERR(rzg2l_irqc_data->base))

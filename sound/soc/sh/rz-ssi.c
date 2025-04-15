@@ -52,6 +52,7 @@
 #define SSIFCR_RIE		BIT(2)
 #define SSIFCR_TFRST		BIT(1)
 #define SSIFCR_RFRST		BIT(0)
+#define SSIFCR_FIFO_RST		(SSIFCR_TFRST | SSIFCR_RFRST)
 
 #define SSIFSR_TDC_MASK		0x3f
 #define SSIFSR_TDC_SHIFT	24
@@ -130,6 +131,14 @@ struct rz_ssi_priv {
 	bool lrckp_fsync_fall;	/* LR clock polarity (SSICR.LRCKP) */
 	bool bckp_rise;	/* Bit clock polarity (SSICR.BCKP) */
 	bool dma_rt;
+
+	/* Full duplex communication support */
+	struct {
+		unsigned int rate;
+		unsigned int channels;
+		unsigned int sample_width;
+		unsigned int sample_bits;
+	} hw_params_cache;
 };
 
 static void rz_ssi_dma_complete(void *data);
@@ -145,7 +154,7 @@ static u32 rz_ssi_reg_readl(struct rz_ssi_priv *priv, uint reg)
 }
 
 static void rz_ssi_reg_mask_setl(struct rz_ssi_priv *priv, uint reg,
-				 u32 bclr, u32 bset)
+				u32 bclr, u32 bset)
 {
 	u32 val;
 
@@ -163,7 +172,7 @@ rz_ssi_get_dai(struct snd_pcm_substream *substream)
 }
 
 static inline bool rz_ssi_stream_is_play(struct rz_ssi_priv *ssi,
-					 struct snd_pcm_substream *substream)
+					struct snd_pcm_substream *substream)
 {
 	return substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
 }
@@ -185,7 +194,7 @@ static inline bool rz_ssi_is_dma_enabled(struct rz_ssi_priv *ssi)
 }
 
 static void rz_ssi_set_substream(struct rz_ssi_stream *strm,
-				 struct snd_pcm_substream *substream)
+				struct snd_pcm_substream *substream)
 {
 	struct rz_ssi_priv *ssi = strm->priv;
 	unsigned long flags;
@@ -196,7 +205,7 @@ static void rz_ssi_set_substream(struct rz_ssi_stream *strm,
 }
 
 static bool rz_ssi_stream_is_valid(struct rz_ssi_priv *ssi,
-				   struct rz_ssi_stream *strm)
+				struct rz_ssi_stream *strm)
 {
 	unsigned long flags;
 	bool ret;
@@ -208,8 +217,13 @@ static bool rz_ssi_stream_is_valid(struct rz_ssi_priv *ssi,
 	return ret;
 }
 
+static inline bool rz_ssi_is_stream_running(struct rz_ssi_stream *strm)
+{
+	return strm->substream && strm->running;
+}
+
 static void rz_ssi_stream_init(struct rz_ssi_stream *strm,
-			       struct snd_pcm_substream *substream)
+				struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 
@@ -228,7 +242,7 @@ static void rz_ssi_stream_init(struct rz_ssi_stream *strm,
 }
 
 static void rz_ssi_stream_quit(struct rz_ssi_priv *ssi,
-			       struct rz_ssi_stream *strm)
+				struct rz_ssi_stream *strm)
 {
 	struct snd_soc_dai *dai = rz_ssi_get_dai(strm->substream);
 
@@ -242,10 +256,10 @@ static void rz_ssi_stream_quit(struct rz_ssi_priv *ssi,
 }
 
 static int rz_ssi_clk_setup(struct rz_ssi_priv *ssi, unsigned int rate,
-			    unsigned int channels)
+				unsigned int channels)
 {
 	static s8 ckdv[16] = { 1,  2,  4,  8, 16, 32, 64, 128,
-			       6, 12, 24, 48, 96, -1, -1, -1 };
+				6, 12, 24, 48, 96, -1, -1, -1 };
 	unsigned int channel_bits = 32;	/* System Word Length */
 	unsigned long bclk_rate = rate * channels * channel_bits;
 	unsigned int div;
@@ -298,73 +312,24 @@ static int rz_ssi_clk_setup(struct rz_ssi_priv *ssi, unsigned int rate,
 	ssicr |= SSICR_DWL(1) | SSICR_SWL(3);
 	rz_ssi_reg_writel(ssi, SSICR, ssicr);
 	rz_ssi_reg_writel(ssi, SSIFCR,
-			  (SSIFCR_AUCKE | SSIFCR_TFRST | SSIFCR_RFRST));
+			(SSIFCR_AUCKE | SSIFCR_TFRST | SSIFCR_RFRST));
 
 	return 0;
 }
 
-static int rz_ssi_start(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
-{
-	bool is_play = rz_ssi_stream_is_play(ssi, strm->substream);
-	u32 ssicr, ssifcr;
-
-	ssicr = rz_ssi_reg_readl(ssi, SSICR);
-	ssifcr = rz_ssi_reg_readl(ssi, SSIFCR) & ~0xF;
-
-	/* FIFO interrupt thresholds */
-	if (rz_ssi_is_dma_enabled(ssi))
-		rz_ssi_reg_writel(ssi, SSISCR, 0);
-	else
-		rz_ssi_reg_writel(ssi, SSISCR,
-				  SSISCR_TDES(strm->fifo_sample_size / 2 - 1) |
-				  SSISCR_RDFS(0));
-
-	/* enable IRQ */
-	if (is_play) {
-		ssicr |= SSICR_TUIEN | SSICR_TOIEN;
-		ssifcr |= SSIFCR_TIE | SSIFCR_RFRST;
-	} else {
-		ssicr |= SSICR_RUIEN | SSICR_ROIEN;
-		ssifcr |= SSIFCR_RIE | SSIFCR_TFRST;
-	}
-
-	rz_ssi_reg_writel(ssi, SSICR, ssicr);
-	rz_ssi_reg_writel(ssi, SSIFCR, ssifcr);
-
-	/* Clear all error flags */
-	rz_ssi_reg_mask_setl(ssi, SSISR,
-			     (SSISR_TOIRQ | SSISR_TUIRQ | SSISR_ROIRQ |
-			      SSISR_RUIRQ), 0);
-
-	strm->running = 1;
-	ssicr |= is_play ? SSICR_TEN : SSICR_REN;
-	rz_ssi_reg_writel(ssi, SSICR, ssicr);
-
-	return 0;
-}
-
-static int rz_ssi_stop(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
+static void rz_ssi_set_idle(struct rz_ssi_priv *ssi)
 {
 	int timeout;
 
-	strm->running = 0;
-
-	/* Disable TX/RX */
-	rz_ssi_reg_mask_setl(ssi, SSICR, SSICR_TEN | SSICR_REN, 0);
-
-	/* Cancel all remaining DMA transactions */
-	if (rz_ssi_is_dma_enabled(ssi))
-		dmaengine_terminate_async(strm->dma_ch);
-
 	/* Disable irqs */
 	rz_ssi_reg_mask_setl(ssi, SSICR, SSICR_TUIEN | SSICR_TOIEN |
-			     SSICR_RUIEN | SSICR_ROIEN, 0);
+				SSICR_RUIEN | SSICR_ROIEN, 0);
 	rz_ssi_reg_mask_setl(ssi, SSIFCR, SSIFCR_TIE | SSIFCR_RIE, 0);
 
 	/* Clear all error flags */
 	rz_ssi_reg_mask_setl(ssi, SSISR,
-			     (SSISR_TOIRQ | SSISR_TUIRQ | SSISR_ROIRQ |
-			      SSISR_RUIRQ), 0);
+				(SSISR_TOIRQ | SSISR_TUIRQ | SSISR_ROIRQ |
+				SSISR_RUIRQ), 0);
 
 	/* Wait for idle */
 	timeout = 100;
@@ -379,7 +344,83 @@ static int rz_ssi_stop(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
 
 	/* Hold FIFOs in reset */
 	rz_ssi_reg_mask_setl(ssi, SSIFCR, 0,
-			     SSIFCR_TFRST | SSIFCR_RFRST);
+				SSIFCR_TFRST | SSIFCR_RFRST);
+}
+
+static int rz_ssi_start(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
+{
+	bool is_play = rz_ssi_stream_is_play(ssi, strm->substream);
+	bool is_full_duplex;
+	u32 ssicr, ssifcr;
+
+	is_full_duplex = rz_ssi_is_stream_running(&ssi->playback) ||
+			rz_ssi_is_stream_running(&ssi->capture);
+	ssicr = rz_ssi_reg_readl(ssi, SSICR);
+	ssifcr = rz_ssi_reg_readl(ssi, SSIFCR);
+	if (!is_full_duplex) {
+		ssifcr &= ~0xF;
+	} else {
+		rz_ssi_reg_mask_setl(ssi, SSICR, SSICR_TEN | SSICR_REN, 0);
+		rz_ssi_set_idle(ssi);
+		ssifcr &= ~SSIFCR_FIFO_RST;
+	}
+
+	/* FIFO interrupt thresholds */
+	if (rz_ssi_is_dma_enabled(ssi))
+		rz_ssi_reg_writel(ssi, SSISCR, 0);
+	else
+		rz_ssi_reg_writel(ssi, SSISCR,
+				SSISCR_TDES(strm->fifo_sample_size / 2 - 1) |
+				SSISCR_RDFS(0));
+
+	/* enable IRQ */
+	if (is_play) {
+		ssicr |= SSICR_TUIEN | SSICR_TOIEN;
+		ssifcr |= SSIFCR_TIE;
+		if (!is_full_duplex)
+			ssifcr |= SSIFCR_RFRST;
+	} else {
+		ssicr |= SSICR_RUIEN | SSICR_ROIEN;
+		ssifcr |= SSIFCR_RIE;
+		if (!is_full_duplex)
+			ssifcr |= SSIFCR_TFRST;
+	}
+
+	rz_ssi_reg_writel(ssi, SSICR, ssicr);
+	rz_ssi_reg_writel(ssi, SSIFCR, ssifcr);
+
+	/* Clear all error flags */
+	rz_ssi_reg_mask_setl(ssi, SSISR,
+				(SSISR_TOIRQ | SSISR_TUIRQ | SSISR_ROIRQ |
+				SSISR_RUIRQ), 0);
+
+	strm->running = 1;
+	if (is_full_duplex)
+		ssicr |= SSICR_TEN | SSICR_REN;
+	else
+		ssicr |= is_play ? SSICR_TEN : SSICR_REN;
+	rz_ssi_reg_writel(ssi, SSICR, ssicr);
+
+	return 0;
+}
+
+static int rz_ssi_stop(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
+{
+
+	strm->running = 0;
+
+	if (rz_ssi_is_stream_running(&ssi->playback) ||
+		rz_ssi_is_stream_running(&ssi->capture))
+		return 0;
+
+	/* Disable TX/RX */
+	rz_ssi_reg_mask_setl(ssi, SSICR, SSICR_TEN | SSICR_REN, 0);
+
+	/* Cancel all remaining DMA transactions */
+	if (rz_ssi_is_dma_enabled(ssi))
+		dmaengine_terminate_async(strm->dma_ch);
+
+	rz_ssi_set_idle(ssi);
 
 	return 0;
 }
@@ -426,7 +467,7 @@ static int rz_ssi_pio_recv(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
 	do {
 		/* frames left in this period */
 		frames_left = runtime->period_size -
-			      (strm->buffer_pos % runtime->period_size);
+				(strm->buffer_pos % runtime->period_size);
 		if (!frames_left)
 			frames_left = runtime->period_size;
 
@@ -477,7 +518,7 @@ static int rz_ssi_pio_send(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
 
 	/* frames left in this period */
 	frames_left = runtime->period_size - (strm->buffer_pos %
-					      runtime->period_size);
+						runtime->period_size);
 	if (frames_left == 0)
 		frames_left = runtime->period_size;
 
@@ -512,66 +553,93 @@ static int rz_ssi_pio_send(struct rz_ssi_priv *ssi, struct rz_ssi_stream *strm)
 
 static irqreturn_t rz_ssi_interrupt(int irq, void *data)
 {
-	struct rz_ssi_stream *strm = NULL;
+	struct rz_ssi_stream *strm_playback = NULL;
+	struct rz_ssi_stream *strm_capture = NULL;
 	struct rz_ssi_priv *ssi = data;
 	u32 ssisr = rz_ssi_reg_readl(ssi, SSISR);
 
 	if (ssi->playback.substream)
-		strm = &ssi->playback;
-	else if (ssi->capture.substream)
-		strm = &ssi->capture;
-	else
+		strm_playback = &ssi->playback;
+
+	if (ssi->capture.substream)
+		strm_capture = &ssi->capture;
+
+	if (!strm_playback && !strm_capture)
 		return IRQ_HANDLED; /* Left over TX/RX interrupt */
 
 	if (irq == ssi->irq_int) { /* error or idle */
-		if (ssisr & SSISR_TUIRQ)
-			strm->uerr_num++;
-		if (ssisr & SSISR_TOIRQ)
-			strm->oerr_num++;
-		if (ssisr & SSISR_RUIRQ)
-			strm->uerr_num++;
-		if (ssisr & SSISR_ROIRQ)
-			strm->oerr_num++;
+		bool is_stopped = false;
+		int i, count;
 
-		if (ssisr & (SSISR_TUIRQ | SSISR_TOIRQ | SSISR_RUIRQ |
-			     SSISR_ROIRQ)) {
-			/* Error handling */
-			/* You must reset (stop/restart) after each interrupt */
-			rz_ssi_stop(ssi, strm);
+		if (rz_ssi_is_dma_enabled(ssi))
+			count = 4;
+		else
+			count = 1;
 
-			/* Clear all flags */
-			rz_ssi_reg_mask_setl(ssi, SSISR, SSISR_TOIRQ |
-					     SSISR_TUIRQ | SSISR_ROIRQ |
-					     SSISR_RUIRQ, 0);
+		if (ssisr & (SSISR_RUIRQ | SSISR_ROIRQ | SSISR_TUIRQ | SSISR_TOIRQ))
+			is_stopped = true;
 
-			/* Add/remove more data */
-			strm->transfer(ssi, strm);
+		if (ssi->capture.substream && is_stopped) {
+			if (ssisr & SSISR_RUIRQ)
+				strm_capture->uerr_num++;
+			if (ssisr & SSISR_ROIRQ)
+				strm_capture->oerr_num++;
 
-			/* Resume */
-			rz_ssi_start(ssi, strm);
+			rz_ssi_stop(ssi, strm_capture);
 		}
+
+		if (ssi->playback.substream && is_stopped) {
+			if (ssisr & SSISR_TUIRQ)
+				strm_playback->uerr_num++;
+			if (ssisr & SSISR_TOIRQ)
+				strm_playback->oerr_num++;
+
+			rz_ssi_stop(ssi, strm_playback);
+		}
+
+		/* Clear all flags */
+		rz_ssi_reg_mask_setl(ssi, SSISR, SSISR_TOIRQ | SSISR_TUIRQ |
+					SSISR_ROIRQ | SSISR_RUIRQ, 0);
+
+		/* Add/remove more data */
+		if (ssi->capture.substream && is_stopped) {
+			for (i = 0; i < count; i++)
+				strm_capture->transfer(ssi, strm_capture);
+		}
+
+		if (ssi->playback.substream && is_stopped) {
+			for (i = 0; i < count; i++)
+				strm_playback->transfer(ssi, strm_playback);
+		}
+
+		/* Resume */
+		if (ssi->playback.substream && is_stopped)
+			rz_ssi_start(ssi, &ssi->playback);
+		if (ssi->capture.substream && is_stopped)
+			rz_ssi_start(ssi, &ssi->capture);
 	}
 
-	if (!strm->running)
+
+	if (!rz_ssi_is_stream_running(&ssi->playback) &&
+		!rz_ssi_is_stream_running(&ssi->capture))
 		return IRQ_HANDLED;
 
 	/* tx data empty */
-	if (irq == ssi->irq_tx)
-		strm->transfer(ssi, &ssi->playback);
+	if (irq == ssi->irq_tx && rz_ssi_is_stream_running(&ssi->playback))
+		strm_playback->transfer(ssi, &ssi->playback);
 
 	/* rx data full */
-	if (irq == ssi->irq_rx) {
-		strm->transfer(ssi, &ssi->capture);
+
+	if (irq == ssi->irq_rx && rz_ssi_is_stream_running(&ssi->capture)) {
+		strm_capture->transfer(ssi, &ssi->capture);
 		rz_ssi_reg_mask_setl(ssi, SSIFSR, SSIFSR_RDF, 0);
 	}
 
 	if (irq == ssi->irq_rt) {
-		struct snd_pcm_substream *substream = strm->substream;
-
-		if (rz_ssi_stream_is_play(ssi, substream)) {
-			strm->transfer(ssi, &ssi->playback);
+		if (ssi->playback.substream) {
+			strm_playback->transfer(ssi, &ssi->playback);
 		} else {
-			strm->transfer(ssi, &ssi->capture);
+			strm_capture->transfer(ssi, &ssi->capture);
 			rz_ssi_reg_mask_setl(ssi, SSIFSR, SSIFSR_RDF, 0);
 		}
 	}
@@ -580,7 +648,7 @@ static irqreturn_t rz_ssi_interrupt(int irq, void *data)
 }
 
 static int rz_ssi_dma_slave_config(struct rz_ssi_priv *ssi,
-				   struct dma_chan *dma_ch, bool is_play)
+				struct dma_chan *dma_ch, bool is_play)
 {
 	struct dma_slave_config cfg;
 
@@ -596,7 +664,7 @@ static int rz_ssi_dma_slave_config(struct rz_ssi_priv *ssi,
 }
 
 static int rz_ssi_dma_transfer(struct rz_ssi_priv *ssi,
-			       struct rz_ssi_stream *strm)
+				struct rz_ssi_stream *strm)
 {
 	struct snd_pcm_substream *substream = strm->substream;
 	struct dma_async_tx_descriptor *desc;
@@ -627,8 +695,8 @@ static int rz_ssi_dma_transfer(struct rz_ssi_priv *ssi,
 							strm->dma_buffer_pos);
 	dma_size = frames_to_bytes(runtime, amount);
 	desc = dmaengine_prep_slave_single(strm->dma_ch, dma_paddr, dma_size,
-					   dir,
-					   DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+					dir,
+					DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!desc) {
 		dev_err(ssi->dev, "dmaengine_prep_slave_single() fail\n");
 		return -ENOMEM;
@@ -706,11 +774,11 @@ static int rz_ssi_dma_request(struct rz_ssi_priv *ssi, struct device *dev)
 		goto no_dma;
 
 	if (ssi->playback.dma_ch &&
-	    (rz_ssi_dma_slave_config(ssi, ssi->playback.dma_ch, true) < 0))
+		(rz_ssi_dma_slave_config(ssi, ssi->playback.dma_ch, true) < 0))
 		goto no_dma;
 
 	if (ssi->capture.dma_ch &&
-	    (rz_ssi_dma_slave_config(ssi, ssi->capture.dma_ch, false) < 0))
+		(rz_ssi_dma_slave_config(ssi, ssi->capture.dma_ch, false) < 0))
 		goto no_dma;
 
 	return 0;
@@ -722,7 +790,7 @@ no_dma:
 }
 
 static int rz_ssi_dai_trigger(struct snd_pcm_substream *substream, int cmd,
-			      struct snd_soc_dai *dai)
+				struct snd_soc_dai *dai)
 {
 	struct rz_ssi_priv *ssi = snd_soc_dai_get_drvdata(dai);
 	struct rz_ssi_stream *strm = rz_ssi_stream_get(ssi, substream);
@@ -731,9 +799,12 @@ static int rz_ssi_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 		/* Soft Reset */
-		rz_ssi_reg_mask_setl(ssi, SSIFCR, 0, SSIFCR_SSIRST);
-		rz_ssi_reg_mask_setl(ssi, SSIFCR, SSIFCR_SSIRST, 0);
-		udelay(5);
+		if (!rz_ssi_is_stream_running(&ssi->playback) &&
+			!rz_ssi_is_stream_running(&ssi->capture)) {
+			rz_ssi_reg_mask_setl(ssi, SSIFCR, 0, SSIFCR_SSIRST);
+			rz_ssi_reg_mask_setl(ssi, SSIFCR, SSIFCR_SSIRST, 0);
+			udelay(5);
+		}
 
 		rz_ssi_stream_init(strm, substream);
 
@@ -742,7 +813,7 @@ static int rz_ssi_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 
 			is_playback = rz_ssi_stream_is_play(ssi, substream);
 			ret = rz_ssi_dma_slave_config(ssi, ssi->playback.dma_ch,
-						      is_playback);
+							is_playback);
 			/* Fallback to pio */
 			if (ret < 0) {
 				ssi->playback.transfer = rz_ssi_pio_send;
@@ -824,14 +895,41 @@ static int rz_ssi_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 	return 0;
 }
 
+static bool rz_ssi_is_valid_hw_params(struct rz_ssi_priv *ssi, unsigned int rate,
+										unsigned int channels,
+										unsigned int sample_width,
+										unsigned int sample_bits)
+{
+	if (ssi->hw_params_cache.rate != rate ||
+		ssi->hw_params_cache.channels != channels ||
+		ssi->hw_params_cache.sample_width != sample_width ||
+		ssi->hw_params_cache.sample_bits != sample_bits)
+		return false;
+
+	return true;
+}
+
+static void rz_ssi_cache_hw_params(struct rz_ssi_priv *ssi, unsigned int rate,
+	unsigned int channels,
+	unsigned int sample_width,
+	unsigned int sample_bits)
+{
+	ssi->hw_params_cache.rate = rate;
+	ssi->hw_params_cache.channels = channels;
+	ssi->hw_params_cache.sample_width = sample_width;
+	ssi->hw_params_cache.sample_bits = sample_bits;
+}
+
 static int rz_ssi_dai_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params,
 				struct snd_soc_dai *dai)
 {
 	struct rz_ssi_priv *ssi = snd_soc_dai_get_drvdata(dai);
+	struct rz_ssi_stream *strm = rz_ssi_stream_get(ssi, substream);
 	unsigned int sample_bits = hw_param_interval(params,
 					SNDRV_PCM_HW_PARAM_SAMPLE_BITS)->min;
 	unsigned int channels = params_channels(params);
+	unsigned int rate = params_rate(params);
 
 	if (sample_bits != 16) {
 		dev_err(ssi->dev, "Unsupported sample width: %d\n",
@@ -845,8 +943,20 @@ static int rz_ssi_dai_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	return rz_ssi_clk_setup(ssi, params_rate(params),
-				params_channels(params));
+	if (rz_ssi_is_stream_running(&ssi->playback) ||
+				rz_ssi_is_stream_running(&ssi->capture)) {
+		if (rz_ssi_is_valid_hw_params(ssi, rate, channels,
+					strm->sample_width, sample_bits))
+			return 0;
+
+		dev_err(ssi->dev, "Full duplex needs same HW params\n");
+		return -EINVAL;
+	}
+
+	rz_ssi_cache_hw_params(ssi, rate, channels, strm->sample_width,
+				sample_bits);
+
+	return rz_ssi_clk_setup(ssi, rate, channels);
 }
 
 static const struct snd_soc_dai_ops rz_ssi_dai_ops = {
@@ -857,8 +967,8 @@ static const struct snd_soc_dai_ops rz_ssi_dai_ops = {
 
 static const struct snd_pcm_hardware rz_ssi_pcm_hardware = {
 	.info			= SNDRV_PCM_INFO_INTERLEAVED	|
-				  SNDRV_PCM_INFO_MMAP		|
-				  SNDRV_PCM_INFO_MMAP_VALID,
+				SNDRV_PCM_INFO_MMAP		|
+				SNDRV_PCM_INFO_MMAP_VALID,
 	.buffer_bytes_max	= PREALLOC_BUFFER,
 	.period_bytes_min	= 32,
 	.period_bytes_max	= 8192,
@@ -870,16 +980,16 @@ static const struct snd_pcm_hardware rz_ssi_pcm_hardware = {
 };
 
 static int rz_ssi_pcm_open(struct snd_soc_component *component,
-			   struct snd_pcm_substream *substream)
+			struct snd_pcm_substream *substream)
 {
 	snd_soc_set_runtime_hwparams(substream, &rz_ssi_pcm_hardware);
 
 	return snd_pcm_hw_constraint_integer(substream->runtime,
-					    SNDRV_PCM_HW_PARAM_PERIODS);
+						SNDRV_PCM_HW_PARAM_PERIODS);
 }
 
 static snd_pcm_uframes_t rz_ssi_pcm_pointer(struct snd_soc_component *component,
-					    struct snd_pcm_substream *substream)
+						struct snd_pcm_substream *substream)
 {
 	struct snd_soc_dai *dai = rz_ssi_get_dai(substream);
 	struct rz_ssi_priv *ssi = snd_soc_dai_get_drvdata(dai);
@@ -889,11 +999,11 @@ static snd_pcm_uframes_t rz_ssi_pcm_pointer(struct snd_soc_component *component,
 }
 
 static int rz_ssi_pcm_new(struct snd_soc_component *component,
-			  struct snd_soc_pcm_runtime *rtd)
+			struct snd_soc_pcm_runtime *rtd)
 {
 	snd_pcm_set_managed_buffer_all(rtd->pcm, SNDRV_DMA_TYPE_DEV,
-				       rtd->card->snd_card->dev,
-				       PREALLOC_BUFFER, PREALLOC_BUFFER_MAX);
+					rtd->card->snd_card->dev,
+					PREALLOC_BUFFER, PREALLOC_BUFFER_MAX);
 	return 0;
 }
 
@@ -953,18 +1063,18 @@ static int rz_ssi_probe(struct platform_device *pdev)
 	audio_clk = devm_clk_get(&pdev->dev, "audio_clk1");
 	if (IS_ERR(audio_clk))
 		return dev_err_probe(&pdev->dev, PTR_ERR(audio_clk),
-				     "no audio clk1");
+					"no audio clk1");
 
 	ssi->audio_clk_1 = clk_get_rate(audio_clk);
 	audio_clk = devm_clk_get(&pdev->dev, "audio_clk2");
 	if (IS_ERR(audio_clk))
 		return dev_err_probe(&pdev->dev, PTR_ERR(audio_clk),
-				     "no audio clk2");
+					"no audio clk2");
 
 	ssi->audio_clk_2 = clk_get_rate(audio_clk);
 	if (!(ssi->audio_clk_1 || ssi->audio_clk_2))
 		return dev_err_probe(&pdev->dev, -EINVAL,
-				     "no audio clk1 or audio clk2");
+					"no audio clk1 or audio clk2");
 
 	ssi->audio_mck = ssi->audio_clk_1 ? ssi->audio_clk_1 : ssi->audio_clk_2;
 
@@ -994,11 +1104,11 @@ static int rz_ssi_probe(struct platform_device *pdev)
 	}
 
 	ret = devm_request_irq(&pdev->dev, ssi->irq_int, &rz_ssi_interrupt,
-			       0, dev_name(&pdev->dev), ssi);
+				0, dev_name(&pdev->dev), ssi);
 	if (ret < 0) {
 		rz_ssi_release_dma_channels(ssi);
 		return dev_err_probe(&pdev->dev, ret,
-				     "irq request error (int_req)\n");
+					"irq request error (int_req)\n");
 	}
 
 	if (!rz_ssi_is_dma_enabled(ssi)) {
@@ -1011,11 +1121,11 @@ static int rz_ssi_probe(struct platform_device *pdev)
 				return ssi->irq_rt;
 
 			ret = devm_request_irq(&pdev->dev, ssi->irq_rt,
-					       &rz_ssi_interrupt, 0,
-					       dev_name(&pdev->dev), ssi);
+						&rz_ssi_interrupt, 0,
+						dev_name(&pdev->dev), ssi);
 			if (ret < 0)
 				return dev_err_probe(&pdev->dev, ret,
-						     "irq request error (dma_rt)\n");
+							"irq request error (dma_rt)\n");
 		} else {
 			if (ssi->irq_tx < 0)
 				return ssi->irq_tx;
@@ -1024,15 +1134,15 @@ static int rz_ssi_probe(struct platform_device *pdev)
 				return ssi->irq_rx;
 
 			ret = devm_request_irq(&pdev->dev, ssi->irq_tx,
-					       &rz_ssi_interrupt, 0,
-					       dev_name(&pdev->dev), ssi);
+						&rz_ssi_interrupt, 0,
+						dev_name(&pdev->dev), ssi);
 			if (ret < 0)
 				return dev_err_probe(&pdev->dev, ret,
 						"irq request error (dma_tx)\n");
 
 			ret = devm_request_irq(&pdev->dev, ssi->irq_rx,
-					       &rz_ssi_interrupt, 0,
-					       dev_name(&pdev->dev), ssi);
+						&rz_ssi_interrupt, 0,
+						dev_name(&pdev->dev), ssi);
 			if (ret < 0)
 				return dev_err_probe(&pdev->dev, ret,
 						"irq request error (dma_rx)\n");
@@ -1054,8 +1164,8 @@ static int rz_ssi_probe(struct platform_device *pdev)
 	}
 
 	ret = devm_snd_soc_register_component(&pdev->dev, &rz_ssi_soc_component,
-					      rz_ssi_soc_dai,
-					      ARRAY_SIZE(rz_ssi_soc_dai));
+						rz_ssi_soc_dai,
+						ARRAY_SIZE(rz_ssi_soc_dai));
 	if (ret < 0) {
 		dev_err(&pdev->dev, "failed to register snd component\n");
 		goto err_snd_soc;

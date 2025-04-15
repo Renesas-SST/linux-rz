@@ -1,0 +1,701 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Renesas RZ/V2H(P) IRQC Driver
+ *
+ * Based on irq-renesas-rzg2l.c
+ *
+ * Copyright (C) 2024 Renesas Electronics Corporation.
+ *
+ * Author: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+ */
+
+#include <linux/bitfield.h>
+#include <linux/clk.h>
+#include <linux/err.h>
+#include <linux/io.h>
+#include <linux/irqchip.h>
+#include <linux/irqdomain.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
+#include <linux/pm_runtime.h>
+#include <linux/reset.h>
+#include <linux/spinlock.h>
+#include <linux/syscore_ops.h>
+#include <linux/irqchip/icu-v2h.h>
+
+/* DT "interrupts" indexes */
+#define ICU_IRQ_START				1
+#define ICU_IRQ_COUNT				16
+#define ICU_TINT_START				(ICU_IRQ_START + ICU_IRQ_COUNT)
+#define ICU_TINT_COUNT				32
+#define ICU_NUM_IRQ				(ICU_TINT_START + ICU_TINT_COUNT)
+
+/* Registers */
+#define ICU_NSCNT				0x00
+#define ICU_NSCLR				0x04
+#define ICU_NITSR				0x08
+#define ICU_ISCTR				0x10
+#define ICU_ISCLR				0x14
+#define ICU_IITSR				0x18
+#define ICU_TSCTR				0x20
+#define ICU_TSCLR				0x24
+#define ICU_TITSR(k)				(0x28 + (k) * 4)
+#define ICU_TSSR(k)				(0x30 + (k) * 4)
+#define ICU_IPTSR				0x60
+
+/* NMI */
+#define ICU_NMI_EDGE_FALLING			0
+#define ICU_NMI_EDGE_RISING			1
+
+#define ICU_NSCNT_NSTAT				BIT(0)
+#define ICU_NSCNT_NSTAT_DETECTED		1
+
+#define ICU_NSCLR_NCLR				BIT(0)
+
+/* IRQ */
+#define ICU_IRQ_LEVEL_LOW			0
+#define ICU_IRQ_EDGE_FALLING			1
+#define ICU_IRQ_EDGE_RISING			2
+#define ICU_IRQ_EDGE_BOTH			3
+
+#define ICU_IITSR_IITSEL_PREP(iitsel, n)	((iitsel) << ((n) * 2))
+#define ICU_IITSR_IITSEL_GET(iitsr, n)		(((iitsr) >> ((n) * 2)) & 0x03)
+#define ICU_IITSR_IITSEL_MASK(n)		ICU_IITSR_IITSEL_PREP(0x03, n)
+
+/* TINT */
+#define ICU_TINT_EDGE_RISING			0
+#define ICU_TINT_EDGE_FALLING			1
+#define ICU_TINT_LEVEL_HIGH			2
+#define ICU_TINT_LEVEL_LOW			3
+
+#define ICU_TITSR_K(tint_nr)			((tint_nr) / 16)
+#define ICU_TITSR_TITSEL_N(tint_nr)		((tint_nr) % 16)
+#define ICU_TITSR_TITSEL_PREP(titsel, n)	ICU_IITSR_IITSEL_PREP(titsel, n)
+#define ICU_TITSR_TITSEL_MASK(n)		ICU_IITSR_IITSEL_MASK(n)
+#define ICU_TITSR_TITSEL_GET(titsr, n)		ICU_IITSR_IITSEL_GET(titsr, n)
+
+#define DMxSELy(x, y)  (0x0420 + (x) * 0x0020 + (y) * 0x0004) /* DMACx Factor Selection Register y */
+#define DMACKSEL(x)    (0x0500 + (x) * 0x0004) /* DMAC ACK Selection Register x */
+#define DMTENDSEL(x)   (0x055C + (x) * 0x0004) /* DMAC TEND Selection Register x */
+
+#define ICU_TINT_EXTRACT_HWIRQ(x)		FIELD_GET(GENMASK(15, 0), (x))
+#define ICU_TINT_EXTRACT_GPIOINT(x)		FIELD_GET(GENMASK(31, 16), (x))
+
+struct rzv2h_hw_info {
+	u8 irqc_irq_count;
+	u16 tint_offset;
+	u8 tint_tssel_shift;
+	u16 tint_tien;
+	u16 tssr_offset;
+	u16 tint_tssel_mask;
+	u8 icu_tint;
+};
+
+/**
+ * struct rzv2h_icu_priv - Interrupt Control Unit controller private data
+ * structure.
+ * @base:	Controller's base address
+ * @irqchip:	Pointer to struct irq_chip
+ * @fwspec:	IRQ firmware specific data
+ * @lock:	Lock to serialize access to hardware registers
+ */
+struct rzv2h_icu_priv {
+	void __iomem			*base;
+	const struct irq_chip		*irqchip;
+	struct irq_fwspec		fwspec[ICU_NUM_IRQ];
+	raw_spinlock_t			lock;
+	const struct rzv2h_hw_info *hw_info;
+};
+
+static struct rzv2h_irqc_reg_cache {
+	void __iomem	*base;
+	u32		nitsr;
+	u32		iitsr;
+	u32		iptsr;
+	u32		titsr[2];
+	u32		tssr[16];
+} *rzv2h_irqc_reg_cache_data;
+
+static const struct rzv2h_hw_info rzv2h_params = {
+	.irqc_irq_count = 16,
+	.tint_offset = 0,
+	.tint_tssel_shift = 8,
+	.tint_tien = BIT(7),
+	.tssr_offset = 4,
+	.tint_tssel_mask = GENMASK(7, 0),
+	.icu_tint = 0x55,
+};
+
+static const struct rzv2h_hw_info rzg3e_params = {
+	.irqc_irq_count = 16,
+	.tint_offset = 0x800,
+	.tint_tssel_shift = 16,
+	.tint_tien = BIT(15),
+	.tssr_offset = 2,
+	.tint_tssel_mask = GENMASK(15, 0),
+	.icu_tint = 0x8C,
+};
+
+static inline struct rzv2h_icu_priv *irq_data_to_priv(struct irq_data *data)
+{
+	return data->domain->host_data;
+}
+
+static void rzv2h_clear_nmi_int(struct rzv2h_icu_priv *priv)
+{
+	u32 nscnt = readl_relaxed(priv->base + ICU_NSCNT);
+
+	if ((nscnt & ICU_NSCNT_NSTAT) == ICU_NSCNT_NSTAT_DETECTED)
+		writel_relaxed(ICU_NSCLR_NCLR, priv->base + ICU_NSCLR);
+}
+
+static void rzv2h_clear_irq_int(struct rzv2h_icu_priv *priv, unsigned int hwirq)
+{
+	unsigned int irq_nr = hwirq - ICU_IRQ_START;
+	u32 isctr, iitsr, iitsel;
+	u32 bit = BIT(irq_nr);
+
+	isctr = readl_relaxed(priv->base + ICU_ISCTR);
+	iitsr = readl_relaxed(priv->base + ICU_IITSR);
+	iitsel = ICU_IITSR_IITSEL_GET(iitsr, irq_nr);
+
+	/*
+	 * When level sensing is used, the interrupt flag gets automatically
+	 * cleared when the interrupt signal is de-asserted by the source of
+	 * the interrupt request, therefore clear the interrupt only for edge
+	 * triggered interrupts.
+	 */
+	if ((isctr & bit) && (iitsel != ICU_IRQ_LEVEL_LOW))
+		writel_relaxed(bit, priv->base + ICU_ISCLR);
+}
+
+static void rzv2h_clear_tint_int(struct rzv2h_icu_priv *priv,
+				 unsigned int hwirq)
+{
+	unsigned int tint_nr = hwirq - ICU_TINT_START;
+	int titsel_n = ICU_TITSR_TITSEL_N(tint_nr);
+	u32 tsctr, titsr, titsel;
+	u32 bit = BIT(tint_nr);
+	int k = tint_nr / 16;
+	u16 tint_offset = priv->hw_info->tint_offset;
+
+	tsctr = readl_relaxed(priv->base + ICU_TSCTR + tint_offset);
+	titsr = readl_relaxed(priv->base + ICU_TITSR(k));
+	titsel = ICU_TITSR_TITSEL_GET(titsr, titsel_n);
+
+	/*
+	 * Writing 1 to the corresponding flag from register ICU_TSCTR only
+	 * has effect if TSTATn = 1b and if it's a rising edge or a falling
+	 * edge interrupt.
+	 */
+	if ((tsctr & bit) && ((titsel == ICU_TINT_EDGE_RISING) ||
+			      (titsel == ICU_TINT_EDGE_FALLING)))
+		writel_relaxed(bit, priv->base + ICU_TSCLR + tint_offset);
+}
+
+static void rzv2h_icu_eoi(struct irq_data *d)
+{
+	struct rzv2h_icu_priv *priv = irq_data_to_priv(d);
+	unsigned int hw_irq = irqd_to_hwirq(d);
+
+	raw_spin_lock(&priv->lock);
+	if (hw_irq >= ICU_TINT_START)
+		rzv2h_clear_tint_int(priv, hw_irq);
+	else if (hw_irq >= ICU_IRQ_START)
+		rzv2h_clear_irq_int(priv, hw_irq);
+	else
+		rzv2h_clear_nmi_int(priv);
+	raw_spin_unlock(&priv->lock);
+
+	irq_chip_eoi_parent(d);
+}
+
+static void rzv2h_tint_irq_endisable(struct irq_data *d, bool enable)
+{
+	struct rzv2h_icu_priv *priv = irq_data_to_priv(d);
+	unsigned int hw_irq = irqd_to_hwirq(d);
+	u32 tint_nr, tssr, tssr_offset, tssel_shift;
+	u8 tssr_index;
+	u16 tint_offset = priv->hw_info->tint_offset;
+
+	if (hw_irq < ICU_TINT_START)
+		return;
+
+	tint_nr = hw_irq - ICU_TINT_START;
+	tssr_index = tint_nr / priv->hw_info->tssr_offset;
+	tssr_offset = tint_nr % priv->hw_info->tssr_offset;
+	tssel_shift = priv->hw_info->tint_tssel_shift * tssr_offset;
+
+	raw_spin_lock(&priv->lock);
+	tssr = readl_relaxed(priv->base + ICU_TSSR(tssr_index) + tint_offset);
+	if (enable)
+		tssr |= (priv->hw_info->tint_tien << tssel_shift);
+	else
+		tssr &= ~(priv->hw_info->tint_tien << tssel_shift);
+	writel_relaxed(tssr, priv->base + ICU_TSSR(tssr_index) + tint_offset);
+	raw_spin_unlock(&priv->lock);
+}
+
+static void rzv2h_icu_irq_disable(struct irq_data *d)
+{
+	irq_chip_disable_parent(d);
+	rzv2h_tint_irq_endisable(d, false);
+}
+
+static void rzv2h_icu_irq_enable(struct irq_data *d)
+{
+	rzv2h_tint_irq_endisable(d, true);
+	irq_chip_enable_parent(d);
+}
+
+static int rzv2h_nmi_set_type(struct irq_data *d, unsigned int type)
+{
+	struct rzv2h_icu_priv *priv = irq_data_to_priv(d);
+	u32 sense;
+
+	switch (type & IRQ_TYPE_SENSE_MASK) {
+	case IRQ_TYPE_EDGE_FALLING:
+		sense = ICU_NMI_EDGE_FALLING;
+		break;
+
+	case IRQ_TYPE_EDGE_RISING:
+		sense = ICU_NMI_EDGE_RISING;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	writel_relaxed(sense, priv->base + ICU_NITSR);
+
+	return 0;
+}
+
+static int rzv2h_irq_set_type(struct irq_data *d, unsigned int type)
+{
+	struct rzv2h_icu_priv *priv = irq_data_to_priv(d);
+	unsigned int hwirq = irqd_to_hwirq(d);
+	u32 irq_nr = hwirq - ICU_IRQ_START;
+	u32 iitsr, sense;
+
+	switch (type & IRQ_TYPE_SENSE_MASK) {
+	case IRQ_TYPE_LEVEL_LOW:
+		sense = ICU_IRQ_LEVEL_LOW;
+		break;
+
+	case IRQ_TYPE_EDGE_FALLING:
+		sense = ICU_IRQ_EDGE_FALLING;
+		break;
+
+	case IRQ_TYPE_EDGE_RISING:
+		sense = ICU_IRQ_EDGE_RISING;
+		break;
+
+	case IRQ_TYPE_EDGE_BOTH:
+		sense = ICU_IRQ_EDGE_BOTH;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	raw_spin_lock(&priv->lock);
+	iitsr = readl_relaxed(priv->base + ICU_IITSR);
+	iitsr &= ~ICU_IITSR_IITSEL_MASK(irq_nr);
+	iitsr |= ICU_IITSR_IITSEL_PREP(sense, irq_nr);
+	rzv2h_clear_irq_int(priv, hwirq);
+	writel_relaxed(iitsr, priv->base + ICU_IITSR);
+	raw_spin_unlock(&priv->lock);
+
+	return 0;
+}
+
+static int rzv2h_tint_set_type(struct irq_data *d, unsigned int type)
+{
+	u32 titsr, titsr_k, titsel_n, tien;
+	struct rzv2h_icu_priv *priv = irq_data_to_priv(d);
+	u32 tssr, tssr_offset, tssel_shift;
+	u8 tssr_index;
+	unsigned int hwirq;
+	u32 tint, sense;
+	int tint_nr;
+	u16 tint_offset = priv->hw_info->tint_offset;
+
+	switch (type & IRQ_TYPE_SENSE_MASK) {
+	case IRQ_TYPE_LEVEL_LOW:
+		sense = ICU_TINT_LEVEL_LOW;
+		break;
+
+	case IRQ_TYPE_LEVEL_HIGH:
+		sense = ICU_TINT_LEVEL_HIGH;
+		break;
+
+	case IRQ_TYPE_EDGE_RISING:
+		sense = ICU_TINT_EDGE_RISING;
+		break;
+
+	case IRQ_TYPE_EDGE_FALLING:
+		sense = ICU_TINT_EDGE_FALLING;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	tint = (u32)(uintptr_t)irq_data_get_irq_chip_data(d);
+	if (tint > priv->hw_info->icu_tint)
+		return -EINVAL;
+
+	priv = irq_data_to_priv(d);
+	hwirq = irqd_to_hwirq(d);
+
+	tint_nr = hwirq - ICU_TINT_START;
+
+	tssr_index = tint_nr / priv->hw_info->tssr_offset;
+	tssr_offset = tint_nr % priv->hw_info->tssr_offset;
+
+	titsr_k = ICU_TITSR_K(tint_nr);
+	titsel_n = ICU_TITSR_TITSEL_N(tint_nr);
+	tssel_shift = priv->hw_info->tint_tssel_shift * tssr_offset;
+	tien = priv->hw_info->tint_tien << tssel_shift;
+
+	raw_spin_lock(&priv->lock);
+
+	tssr = readl_relaxed(priv->base + ICU_TSSR(tssr_index) + tint_offset);
+	tssr &= ~(priv->hw_info->tint_tssel_mask << tssel_shift);
+	tssr |= (tint << tssel_shift);
+
+	writel_relaxed(tssr, priv->base + ICU_TSSR(tssr_index) + tint_offset);
+	titsr = readl_relaxed(priv->base + ICU_TITSR(titsr_k) + tint_offset);
+	titsr &= ~ICU_TITSR_TITSEL_MASK(titsel_n);
+	titsr |= ICU_TITSR_TITSEL_PREP(sense, titsel_n);
+
+	writel_relaxed(titsr, priv->base + ICU_TITSR(titsr_k) + tint_offset);
+
+	rzv2h_clear_tint_int(priv, hwirq);
+
+	writel_relaxed(tssr | tien, priv->base + ICU_TSSR(tssr_index) + tint_offset);
+
+	raw_spin_unlock(&priv->lock);
+
+	return 0;
+}
+
+static int rzv2h_icu_set_type(struct irq_data *d, unsigned int type)
+{
+	unsigned int hw_irq = irqd_to_hwirq(d);
+	int ret;
+
+	if (hw_irq >= ICU_TINT_START)
+		ret = rzv2h_tint_set_type(d, type);
+	else if (hw_irq >= ICU_IRQ_START)
+		ret = rzv2h_irq_set_type(d, type);
+	else
+		ret = rzv2h_nmi_set_type(d, type);
+
+	if (ret)
+		return ret;
+
+	return irq_chip_set_type_parent(d, IRQ_TYPE_LEVEL_HIGH);
+}
+
+static int rzv2h_irqc_irq_suspend(void)
+{
+	void __iomem *base = rzv2h_irqc_reg_cache_data->base;
+
+	rzv2h_irqc_reg_cache_data->nitsr = readl_relaxed(base + ICU_NITSR);
+	rzv2h_irqc_reg_cache_data->iitsr = readl_relaxed(base + ICU_IITSR);
+	rzv2h_irqc_reg_cache_data->iptsr = readl_relaxed(base + ICU_IPTSR);
+
+	for (u8 i = 0; i < 2; i++)
+		rzv2h_irqc_reg_cache_data->titsr[i] = readl_relaxed(base + ICU_TITSR(i));
+
+	for (u8 i = 0; i < 16; i++)
+		rzv2h_irqc_reg_cache_data->tssr[i] = readl_relaxed(base + ICU_TSSR(i));
+
+	return 0;
+}
+
+static void rzv2h_irqc_irq_resume(void)
+{
+	void __iomem *base = rzv2h_irqc_reg_cache_data->base;
+
+	/*
+	 * Restore only interrupt type. TSSRx will be restored at the
+	 * request of pin controller to avoid spurious interrupts due
+	 * to invalid PIN states.
+	 */
+	for (u8 i = 0; i < 2; i++)
+		writel_relaxed(rzv2h_irqc_reg_cache_data->titsr[i], base + ICU_TITSR(i));
+
+	for (u8 i = 0; i < 16; i++)
+		writel_relaxed(rzv2h_irqc_reg_cache_data->tssr[i], base + ICU_TSSR(i));
+
+	writel_relaxed(rzv2h_irqc_reg_cache_data->nitsr, base + ICU_NITSR);
+	writel_relaxed(rzv2h_irqc_reg_cache_data->iitsr, base + ICU_IITSR);
+	writel_relaxed(rzv2h_irqc_reg_cache_data->iptsr, base + ICU_IPTSR);
+}
+
+static struct syscore_ops rzv2h_irqc_syscore_ops = {
+	.suspend	= rzv2h_irqc_irq_suspend,
+	.resume		= rzv2h_irqc_irq_resume,
+};
+
+static const struct irq_chip rzv2h_icu_chip = {
+	.name			= "rzv2h-icu",
+	.irq_eoi		= rzv2h_icu_eoi,
+	.irq_mask		= irq_chip_mask_parent,
+	.irq_unmask		= irq_chip_unmask_parent,
+	.irq_disable		= rzv2h_icu_irq_disable,
+	.irq_enable		= rzv2h_icu_irq_enable,
+	.irq_get_irqchip_state	= irq_chip_get_parent_state,
+	.irq_set_irqchip_state	= irq_chip_set_parent_state,
+	.irq_retrigger		= irq_chip_retrigger_hierarchy,
+	.irq_set_type		= rzv2h_icu_set_type,
+	.irq_set_affinity	= irq_chip_set_affinity_parent,
+	.flags			= IRQCHIP_SET_TYPE_MASKED | IRQCHIP_SKIP_SET_WAKE,
+};
+
+int register_dmac_req_signal(struct platform_device *icu_dev, unsigned int dmac,
+						unsigned int channel, int dmac_req)
+{
+	struct rzv2h_icu_priv *priv = platform_get_drvdata(icu_dev);
+	u32 y, low_up, dmsel;
+	u32 mask = 0x0000FFFF;
+
+	if ((dmac_req < 0) || (dmac_req > 0x1B4))
+		dev_dbg(&icu_dev->dev, "%s: Disable dmac req signal\n", __func__);
+
+	if ((channel < 0) || (channel > 15)) {
+		dev_dbg(&icu_dev->dev, "%s: Invalid channel\n", __func__);
+		return -EINVAL;
+	}
+
+	y = channel / 2;
+	low_up = channel % 2;
+
+	dmsel = readl(priv->base + DMxSELy(dmac, y));
+
+	if (low_up) {
+		dmac_req <<= 16;
+		mask <<= 16;
+	}
+
+	dmsel = (dmsel & (~mask)) | dmac_req;
+
+	writel(dmsel, priv->base + DMxSELy(dmac, y));
+
+	return 0;
+}
+EXPORT_SYMBOL(register_dmac_req_signal);
+
+int register_dmac_ack_signal(struct platform_device *icu_dev, unsigned int dmac,
+					     int dmac_ack, int dmac_ack_channel)
+{
+	struct rzv2h_icu_priv *priv = platform_get_drvdata(icu_dev);
+	u32 reg_position, dmacksel, mask;
+
+	if ((dmac_ack_channel < 0) || (dmac_ack_channel > 0x4F))
+		dev_dbg(&icu_dev->dev, "%s: Disable dmac ack signal\n", __func__);
+
+	if ((dmac_ack < 0) || (dmac_ack > 88))
+		dev_dbg(&icu_dev->dev, "%s: Not use dmac ack\n", __func__);
+
+	reg_position = dmac_ack / 4;
+	dmacksel = readl(priv->base + DMACKSEL(reg_position));
+
+	mask = 0x7F << (8 * (dmac_ack % 4));
+	dmac_ack_channel = dmac_ack_channel + (16 * dmac);
+	dmac_ack_channel <<= (8 * (dmac_ack % 4));
+	dmacksel = (dmacksel  & (~mask)) | dmac_ack_channel;
+
+	writel(dmacksel, priv->base + DMACKSEL(reg_position));
+
+	return 0;
+}
+EXPORT_SYMBOL(register_dmac_ack_signal);
+
+static int rzv2h_icu_alloc(struct irq_domain *domain, unsigned int virq,
+			    unsigned int nr_irqs, void *arg)
+{
+	struct rzv2h_icu_priv *priv = domain->host_data;
+	unsigned long tint = 0;
+	irq_hw_number_t hwirq;
+	unsigned int type;
+	int ret;
+
+	ret = irq_domain_translate_twocell(domain, arg, &hwirq, &type);
+	if (ret)
+		return ret;
+
+	/*
+	 * For TINT interrupts the hwirq and TINT are encoded in
+	 * fwspec->param[0].
+	 * hwirq is embedded in bits 0-15.
+	 * TINT is embedded in bits 16-31.
+	 */
+	if (hwirq >= ICU_TINT_START) {
+		tint = ICU_TINT_EXTRACT_GPIOINT(hwirq);
+		hwirq = ICU_TINT_EXTRACT_HWIRQ(hwirq);
+
+		if (hwirq < ICU_TINT_START)
+			return -EINVAL;
+	}
+
+	if (hwirq > (ICU_NUM_IRQ - 1))
+		return -EINVAL;
+
+	ret = irq_domain_set_hwirq_and_chip(domain, virq, hwirq, priv->irqchip,
+					    (void *)(uintptr_t)tint);
+	if (ret)
+		return ret;
+
+	return irq_domain_alloc_irqs_parent(domain, virq, nr_irqs,
+					    &priv->fwspec[hwirq]);
+}
+
+static const struct irq_domain_ops rzv2h_icu_domain_ops = {
+	.alloc = rzv2h_icu_alloc,
+	.free = irq_domain_free_irqs_common,
+	.translate = irq_domain_translate_twocell,
+};
+
+static int rzv2h_icu_parse_interrupts(struct rzv2h_icu_priv *priv,
+				       struct device_node *np)
+{
+	struct of_phandle_args map;
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < ICU_NUM_IRQ; i++) {
+		ret = of_irq_parse_one(np, i, &map);
+		if (ret)
+			return ret;
+
+		of_phandle_args_to_fwspec(np, map.args, map.args_count,
+					  &priv->fwspec[i]);
+	}
+
+	return 0;
+}
+
+static int icu_common_init(struct device_node *node,
+				 struct device_node *parent,
+				 const struct rzv2h_hw_info *hw_info)
+{
+	struct irq_domain *irq_domain, *parent_domain;
+	struct rzv2h_icu_priv *rzv2h_icu_data;
+	struct platform_device *pdev;
+	struct reset_control *resetn;
+	int ret;
+
+	pdev = of_find_device_by_node(node);
+	if (!pdev)
+		return -ENODEV;
+
+	parent_domain = irq_find_host(parent);
+	if (!parent_domain) {
+		dev_err(&pdev->dev, "cannot find parent domain\n");
+		ret = -ENODEV;
+		goto put_dev;
+	}
+
+	rzv2h_icu_data = devm_kzalloc(&pdev->dev, sizeof(*rzv2h_icu_data),
+				       GFP_KERNEL);
+	if (!rzv2h_icu_data) {
+		ret = -ENOMEM;
+		goto put_dev;
+	}
+
+	rzv2h_icu_data->irqchip = &rzv2h_icu_chip;
+	platform_set_drvdata(pdev, rzv2h_icu_data);
+
+	rzv2h_icu_data->base = devm_of_iomap(&pdev->dev, pdev->dev.of_node, 0,
+					      NULL);
+	if (IS_ERR(rzv2h_icu_data->base)) {
+		ret = PTR_ERR(rzv2h_icu_data->base);
+		goto put_dev;
+	}
+
+	rzv2h_irqc_reg_cache_data = devm_kzalloc(&pdev->dev,
+					sizeof(*rzv2h_irqc_reg_cache_data), GFP_KERNEL);
+	rzv2h_irqc_reg_cache_data->base = rzv2h_icu_data->base;
+
+	ret = rzv2h_icu_parse_interrupts(rzv2h_icu_data, node);
+	if (ret) {
+		dev_err(&pdev->dev, "cannot parse interrupts: %d\n", ret);
+		goto put_dev;
+	}
+
+	resetn = devm_reset_control_get_exclusive(&pdev->dev, NULL);
+	if (IS_ERR(resetn)) {
+		ret = PTR_ERR(resetn);
+		goto put_dev;
+	}
+
+	ret = reset_control_deassert(resetn);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to deassert resetn pin, %d\n", ret);
+		goto put_dev;
+	}
+
+	pm_runtime_enable(&pdev->dev);
+	ret = pm_runtime_resume_and_get(&pdev->dev);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "pm_runtime_resume_and_get failed: %d\n",
+			ret);
+		goto pm_disable;
+	}
+
+	raw_spin_lock_init(&rzv2h_icu_data->lock);
+
+	irq_domain = irq_domain_add_hierarchy(parent_domain, 0, ICU_NUM_IRQ,
+					      node, &rzv2h_icu_domain_ops,
+					      rzv2h_icu_data);
+	if (!irq_domain) {
+		dev_err(&pdev->dev, "failed to add irq domain\n");
+		ret = -ENOMEM;
+		goto pm_put;
+	}
+
+	if (!hw_info) {
+		dev_err(&pdev->dev, "missing hardware info\n");
+		ret = -ENOENT;
+		goto pm_put;
+	}
+
+	rzv2h_icu_data->hw_info = hw_info;
+	register_syscore_ops(&rzv2h_irqc_syscore_ops);
+
+	put_device(&pdev->dev);
+	return 0;
+
+pm_put:
+	pm_runtime_put(&pdev->dev);
+pm_disable:
+	pm_runtime_disable(&pdev->dev);
+	reset_control_assert(resetn);
+put_dev:
+	put_device(&pdev->dev);
+
+	return ret;
+}
+
+static int __init rzv2h_irqc_init(struct device_node *node,
+						    struct device_node *parent)
+{
+	return icu_common_init(node, parent, &rzv2h_params);
+}
+
+static int __init rzg3e_icu_init(struct device_node *node,
+						    struct device_node *parent)
+{
+	return icu_common_init(node, parent, &rzg3e_params);
+}
+
+IRQCHIP_PLATFORM_DRIVER_BEGIN(rzv2h_icu)
+IRQCHIP_MATCH("renesas,r9a09g057-icu", rzv2h_irqc_init)
+IRQCHIP_MATCH("renesas,r9a09g047-icu", rzg3e_icu_init)
+IRQCHIP_PLATFORM_DRIVER_END(rzv2h_icu)
+MODULE_AUTHOR("Fabrizio Castro <fabrizio.castro.jz@renesas.com>");
+MODULE_DESCRIPTION("Renesas RZ/V2H(P) ICU Driver");

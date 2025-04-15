@@ -91,6 +91,7 @@
  */
 
 #include <linux/pm_runtime.h>
+#include <linux/reset.h>
 #include <linux/of_graph.h>
 #include "rsnd.h"
 
@@ -104,6 +105,8 @@ static const struct of_device_id rsnd_of_match[] = {
 	{ .compatible = "renesas,rcar_sound-gen2", .data = (void *)RSND_GEN2 },
 	{ .compatible = "renesas,rcar_sound-gen3", .data = (void *)RSND_GEN3 },
 	{ .compatible = "renesas,rcar_sound-gen4", .data = (void *)RSND_GEN4 },
+	{ .compatible = "renesas,rcar_sound-r9a09g047", .data = (void *)RSND_RZV2H },
+	{ .compatible = "renesas,rcar_sound-r9a09g057", .data = (void *)RSND_RZV2H },
 	/* Special Handling */
 	{ .compatible = "renesas,rcar_sound-r8a77990", .data = (void *)(RSND_GEN3 | RSND_SOC_E) },
 	{},
@@ -196,10 +199,11 @@ int rsnd_mod_init(struct rsnd_priv *priv,
 		  struct rsnd_mod *mod,
 		  struct rsnd_mod_ops *ops,
 		  struct clk *clk,
+		  struct reset_control *rstc,
 		  enum rsnd_mod_type type,
 		  int id)
 {
-	int ret = clk_prepare(clk);
+	int ret = clk_prepare_enable(clk);
 
 	if (ret)
 		return ret;
@@ -208,9 +212,20 @@ int rsnd_mod_init(struct rsnd_priv *priv,
 	mod->ops	= ops;
 	mod->type	= type;
 	mod->clk	= clk;
+	mod->rstc	= rstc;
 	mod->priv	= priv;
 
-	return 0;
+	usleep_range(2000, 4000);
+
+	ret = reset_control_deassert(mod->rstc);
+	if (ret < 0)
+		return ret;
+
+	usleep_range(2000, 4000);
+
+	clk_disable(clk);
+
+	return ret;
 }
 
 void rsnd_mod_quit(struct rsnd_mod *mod)
@@ -602,7 +617,7 @@ int rsnd_dai_connect(struct rsnd_mod *mod,
 	return 0;
 }
 
-static void rsnd_dai_disconnect(struct rsnd_mod *mod,
+void rsnd_dai_disconnect(struct rsnd_mod *mod,
 				struct rsnd_dai_stream *io,
 				enum rsnd_mod_type type)
 {
@@ -681,6 +696,7 @@ static void rsnd_dai_stream_init(struct rsnd_dai_stream *io,
 				struct snd_pcm_substream *substream)
 {
 	io->substream		= substream;
+	io->dma_buffer_pos	= 0;
 }
 
 static void rsnd_dai_stream_quit(struct rsnd_dai_stream *io)
@@ -1414,6 +1430,22 @@ static void __rsnd_dai_probe(struct rsnd_priv *priv,
 	drv->ops	= &rsnd_soc_dai_ops;
 	drv->id		= dai_i;
 	drv->dai_args	= &rdai->dai_args;
+
+	snprintf(io_playback->name, RSND_DAI_NAME_SIZE,
+		 "DAI%d Playback", dai_i);
+	drv->playback.rates		= RSND_RATES;
+	drv->playback.formats		= RSND_FMTS;
+	drv->playback.channels_min	= 2;
+	drv->playback.channels_max	= 8;
+	drv->playback.stream_name	= io_playback->name;
+
+	snprintf(io_capture->name, RSND_DAI_NAME_SIZE,
+		 "DAI%d Capture", dai_i);
+	drv->capture.rates		= RSND_RATES;
+	drv->capture.formats		= RSND_FMTS;
+	drv->capture.channels_min	= 2;
+	drv->capture.channels_max	= 8;
+	drv->capture.stream_name	= io_capture->name;
 
 	io_playback->rdai		= rdai;
 	io_capture->rdai		= rdai;

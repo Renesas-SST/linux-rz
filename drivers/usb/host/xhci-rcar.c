@@ -15,17 +15,18 @@
 #include "xhci.h"
 #include "xhci-plat.h"
 #include "xhci-rzv2m.h"
+#include "xhci-rzv2h.h"
 
 #define XHCI_RCAR_FIRMWARE_NAME_V1	"r8a779x_usb3_v1.dlmem"
 #define XHCI_RCAR_FIRMWARE_NAME_V3	"r8a779x_usb3_v3.dlmem"
 
 /*
-* - The V3 firmware is for all R-Car Gen3
-* - The V2 firmware is possible to use on R-Car Gen2. However, the V2 causes
-*   performance degradation. So, this driver continues to use the V1 if R-Car
-*   Gen2.
-* - The V1 firmware is impossible to use on R-Car Gen3.
-*/
+ * - The V3 firmware is for all R-Car Gen3
+ * - The V2 firmware is possible to use on R-Car Gen2. However, the V2 causes
+ *   performance degradation. So, this driver continues to use the V1 if R-Car
+ *   Gen2.
+ * - The V1 firmware is impossible to use on R-Car Gen3.
+ */
 MODULE_FIRMWARE(XHCI_RCAR_FIRMWARE_NAME_V1);
 MODULE_FIRMWARE(XHCI_RCAR_FIRMWARE_NAME_V3);
 
@@ -233,6 +234,12 @@ static const struct xhci_plat_priv xhci_plat_renesas_rzv2m = {
 	.plat_start = xhci_rzv2m_start,
 };
 
+static const struct xhci_plat_priv xhci_plat_renesas_rzv2h = {
+	.quirks = XHCI_RESET_ON_RESUME,
+	.plat_start = xhci_rzv2h_start,
+	.resume_quirk = xhci_rzv2h_resume,
+};
+
 static const struct of_device_id usb_xhci_of_match[] = {
 	{
 		.compatible = "renesas,xhci-r8a7790",
@@ -258,6 +265,9 @@ static const struct of_device_id usb_xhci_of_match[] = {
 	}, {
 		.compatible = "renesas,rzv2m-xhci",
 		.data = &xhci_plat_renesas_rzv2m,
+	}, {
+		.compatible = "renesas,rzv2h-xhci",
+		.data = &xhci_plat_renesas_rzv2h,
 	},
 	{ },
 };
