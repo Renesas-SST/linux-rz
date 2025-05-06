@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+ * Device Tree Source for the RZ/V2H EVK MXT board variant (IMX462 camera)
+ *
+ * Copyright (C) 2025 Renesas Electronics Corporation
+ * Copyright (C) 2024 MXT Creation SRL
+ */
+
+/dts-v1/;
+#include "r9a09g057h4-evk-ver1.dts"
+
+/ {
+	clk_ext_camera: clk_ext_camera {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+};
+&csi20 {
+	status = "okay";
+
+	ports {
+		port {
+			csi20_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&imx_to_csi20>;
+			};
+		};
+	};
+};
+
+&csi21 {
+	status = "okay";
+
+	ports {
+		port {
+			csi21_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&imx_to_csi21>;
+			};
+		};
+	};
+};
+
+&csi22 {
+	status = "okay";
+
+	ports {
+		port {
+			csi22_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&imx_to_csi22>;
+			};
+		};
+	};
+};
+
+&csi23 {
+	status = "okay";
+
+	ports {
+		port {
+			csi23_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&imx_to_csi23>;
+			};
+		};
+	};
+};
+
+&i2c0 {
+	pinctrl-0 = <&i2c0_pins>;
+	pinctrl-names = "default";
+
+	status = "okay";
+	
+	imx462_csi20: imx462_csi20@c {
+		compatible = "arducam,arducam-pivariety";
+		reg = <0x0C>;
+		clock-names = "xclk";
+		clocks = <&clk_ext_camera>;
+		clock-frequency = <24000000>;
+		VANA-supply = <&ov5645_vdda_2v8>;
+		VDIG-supply = <&ov5645_vdddo_1v8>;
+		VDDL-supply = <&ov5645_vddd_1v5>;
+		
+		/* Set dummy enable gpio */
+		enable-gpios = <&pinctrl RZV2H_GPIO(1, 6) GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pinctrl RZV2H_GPIO(6, 4) GPIO_ACTIVE_LOW>;
+
+		port {
+			imx_to_csi20: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&csi20_in>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <493500000>;
+			};
+		};
+	};
+	
+	/delete-node/ ov5645_csi20@3c;
+};
+
+&i2c1 {
+	pinctrl-0 = <&i2c1_pins>;
+	pinctrl-names = "default";
+
+	status = "okay";
+	
+	imx462_csi21: imx462_csi21@c {
+		compatible = "arducam,arducam-pivariety";
+		reg = <0x0C>;
+		clock-names = "xclk";
+		clocks = <&clk_ext_camera>;
+		clock-frequency = <24000000>;
+		VANA-supply = <&ov5645_vdda_2v8>;
+		VDIG-supply = <&ov5645_vdddo_1v8>;
+		VDDL-supply = <&ov5645_vddd_1v5>;
+		
+		/* Set dummy enable gpio */
+		enable-gpios = <&pinctrl RZV2H_GPIO(1, 7) GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pinctrl RZV2H_GPIO(6, 5) GPIO_ACTIVE_LOW>;
+
+		port {
+			imx_to_csi21: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&csi21_in>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <493500000>;
+			};
+		};
+	};
+	
+	/delete-node/ ov5645_csi21@3c;
+};
+
+&i2c6 {
+	pinctrl-0 = <&i2c6_pins>;
+	pinctrl-names = "default";
+
+	status = "okay";
+	
+	imx462_csi22: imx462_csi22@c {
+		compatible = "arducam,arducam-pivariety";
+		reg = <0x0C>;
+		clock-names = "xclk";
+		clocks = <&clk_ext_camera>;
+		clock-frequency = <24000000>;
+		VANA-supply = <&ov5645_vdda_2v8>;
+		VDIG-supply = <&ov5645_vdddo_1v8>;
+		VDDL-supply = <&ov5645_vddd_1v5>;
+		
+		enable-gpios = <&pinctrl RZV2H_GPIO(6, 1) GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pinctrl RZV2H_GPIO(9, 2) GPIO_ACTIVE_LOW>;
+
+		port {
+			imx_to_csi22: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&csi22_in>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <493500000>;
+			};
+		};
+	};
+	
+	/delete-node/ ov5645_csi22@3c;
+};
+
+&i2c7 {
+	pinctrl-0 = <&i2c7_pins>;
+	pinctrl-names = "default";
+
+	status = "okay";
+	
+	imx462_csi23: imx462_csi23@c {
+		compatible = "arducam,arducam-pivariety";
+		reg = <0x0C>;
+		clock-names = "xclk";
+		clocks = <&clk_ext_camera>;
+		clock-frequency = <24000000>;
+		VANA-supply = <&ov5645_vdda_2v8>;
+		VDIG-supply = <&ov5645_vdddo_1v8>;
+		VDDL-supply = <&ov5645_vddd_1v5>;
+		
+		enable-gpios = <&pinctrl RZV2H_GPIO(6, 0) GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pinctrl RZV2H_GPIO(9, 3) GPIO_ACTIVE_LOW>;
+
+		port {
+			imx_to_csi23: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&csi23_in>;
+				clock-noncontinuous;
+				link-frequencies = /bits/ 64 <493500000>;
+			};
+		};
+	};
+	
+	/delete-node/ ov5645_csi23@3c;
+};
+

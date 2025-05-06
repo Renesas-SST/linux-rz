@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+ * Device Tree Source for the RZ/V2H EVK MXT board variant (TEVS camera)
+ *
+ * Copyright (C) 2025 Renesas Electronics Corporation
+ * Copyright (C) 2024 MXT Creation SRL
+ */
+
+/dts-v1/;
+#include "r9a09g057h4-evk-ver1.dts"
+
+&csi20 {
+	status = "okay";
+
+	ports {
+		port {
+			csi20_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&tevs_to_csi20>;
+			};
+		};
+	};
+};
+
+&i2c0 {
+	pinctrl-0 = <&i2c0_pins>;
+	pinctrl-names = "default";
+
+	status = "okay";
+
+	tevs_csi20: tevs_csi20@48 {
+		compatible = "tn,tevs";
+		reg = <0x48>;
+
+		continuous-clock = <0>;
+		data-lanes = <2>;
+		data-frequency = <800>;
+		//hw-reset; // keep the camera off, when unused
+		
+		reset-gpios = <&pinctrl RZV2H_GPIO(6, 4) GPIO_ACTIVE_LOW>;
+
+		port {
+			tevs_to_csi20: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				remote-endpoint = <&csi20_in>;
+			};
+		};
+	};
+	
+	/delete-node/ ov5645_csi20@3c;
+};
