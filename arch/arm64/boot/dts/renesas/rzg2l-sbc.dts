@@ -11,7 +11,7 @@
 #include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
 
 / {
-	compatible = "rzpi", "renesas,r9a07g044l2", "renesas,r9a07g044";
+	compatible = "rzg2l-sbc", "renesas,r9a07g044l2", "renesas,r9a07g044";
 	model = "Renesas RZG2L SBC board";
 
 	aliases {

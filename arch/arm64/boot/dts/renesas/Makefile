@@ -128,8 +128,8 @@ dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc-cru-csi-ov5645.dtbo
 r9a07g044l2-smarc-cru-csi-ov5645-dtbs := r9a07g044l2-smarc.dtb r9a07g044l2-smarc-cru-csi-ov5645.dtbo
 dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc-cru-csi-ov5645.dtb
 
-DTC_FLAGS_rzpi += -@
-dtb-$(CONFIG_ARCH_R9A07G044) += rzpi.dtb
+DTC_FLAGS_rzg2l-sbc += -@
+dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-sbc.dtb
 subdir-$(CONFIG_ARCH_R9A07G044) += overlays
 
 dtb-$(CONFIG_ARCH_R9A07G054) += r9a07g054l2-smarc.dtb
