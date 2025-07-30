@@ -363,8 +363,7 @@ static int sci_rxfill(struct uart_port *port)
 static void sci_transmit_chars(struct uart_port *port)
 {
 	struct sci_port *s = to_sci_port(port);
-	struct circ_buf *xmit = &port->state->xmit;
-	unsigned int stopped = uart_tx_stopped(port);
+	struct tty_port *tport = &port->state->port;
 	unsigned int status;
 	unsigned int ctrl;
 	int count;
@@ -372,7 +371,7 @@ static void sci_transmit_chars(struct uart_port *port)
 	status = serial_port_in(port, CSR);
 	if (!(status & CSR_TDRE)) {
 		ctrl = serial_port_in(port, CCR0);
-		if (uart_circ_empty(xmit))
+		if (kfifo_is_empty(&tport->xmit_fifo))
 			ctrl &= ~CCR0_TIE;
 		else
 			ctrl |= CCR0_TIE;
@@ -388,9 +387,6 @@ static void sci_transmit_chars(struct uart_port *port)
 		if (port->x_char) {
 			c = port->x_char;
 			port->x_char = 0;
-		} else if (!uart_circ_empty(xmit) && !stopped) {
-			c = xmit->buf[xmit->tail];
-			xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
 		} else {
 			break;
 		}
@@ -401,9 +397,9 @@ static void sci_transmit_chars(struct uart_port *port)
 		port->icount.tx++;
 	} while (--count > 0);
 
-	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+	if (kfifo_len(&tport->xmit_fifo) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
-	if (uart_circ_empty(xmit)) {
+	if (kfifo_is_empty(&tport->xmit_fifo)) {
 		ctrl = serial_port_in(port, CCR0);
 		ctrl &= ~CCR0_TIE;
 		ctrl |= CCR0_TEIE;
@@ -625,7 +621,7 @@ static irqreturn_t sci_tx_end_interrupt(int irq, void *ptr)
 {
 	struct uart_port *port = ptr;
 	struct sci_port *s = to_sci_port(port);
-	struct circ_buf *xmit = &port->state->xmit;
+	struct tty_port *tport = &port->state->port;
 	unsigned long flags;
 	unsigned int ctrl;
 
@@ -635,7 +631,7 @@ static irqreturn_t sci_tx_end_interrupt(int irq, void *ptr)
 	serial_port_out(port, CCR0, ctrl);
 	enable_irq(s->irqs[SCIx_TXI_IRQ]);
 
-	if (!uart_circ_empty(xmit))
+	if (!kfifo_is_empty(&tport->xmit_fifo))
 		serial_port_out(port, CCR0, ctrl | CCR0_TE | CCR0_TIE);
 
 	spin_unlock_irqrestore(&port->lock, flags);
