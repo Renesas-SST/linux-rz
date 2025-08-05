@@ -728,13 +728,14 @@ static int rzg2l_mipi_dsi_startup(struct rzg2l_mipi_dsi *dsi,
 	ret = pm_runtime_resume_and_get(dsi->dev);
 	if (ret < 0)
 		return ret;
+
 	if (dsi->info->type == MIPI_DSI_DPHY_RZV2H) {
 		clk_set_rate(dsi->vclk, mode->clock * 1000);
-	} else {
-		clk_set_rate(dsi->vclk, mode->clock);
-	}
 
-	ret = dsi->info->dphy_init(dsi, hsfreq);
+		ret = dsi->info->dphy_init(dsi, hsfreq);
+	} else {
+		ret = rzg2l_mipi_dsi_dphy_init(dsi, hsfreq);
+	}
 	if (ret < 0)
 		goto err_phy;
 
