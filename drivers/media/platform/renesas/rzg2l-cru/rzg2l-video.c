@@ -671,7 +671,7 @@ static int retry_streaming_func(void *data)
 
 		/* Stop CRU reception */
 		rzg2l_cru_write(cru, ICnEN, 0);
-		v4l2_subdev_call(sd, video, post_streamoff);
+		v4l2_subdev_call(sd, video, s_stream, 0);
 		rzg2l_cru_stop_image_processing(cru);
 		pm_runtime_put(cru->dev);
 		msleep(20);
