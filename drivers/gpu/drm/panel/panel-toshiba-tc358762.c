@@ -255,9 +255,29 @@ static void tc358762_gen_write(struct mipi_dsi_device *dsi, const void *data, si
 	tc358762_gen_write(dsi, d, ARRAY_SIZE(d));\
 })
 
+// Support DCS write
+static int tc358762_dcs_write(struct mipi_dsi_device *dsi, const void *data, size_t len)
+{
+	int ret;
+	ret = mipi_dsi_dcs_write_buffer(dsi, data, len);
+	if (ret < 0)
+		dev_err(&dsi->dev, "failed to write DCS seq, ret=%d\n", ret);
+	else
+		dev_info(&dsi->dev, "wrote DCS seq, len=%zu\n", len);
+    return ret;
+}
+
+#define tc358762_dcs_write_seq(dsi, seq...) \
+({\
+	static const u8 d[] = { seq };\
+	tc358762_dcs_write(dsi, d, ARRAY_SIZE(d));\
+})
+
 static int tc358762_dsi_init(struct tc358762 *p)
 {
 	struct mipi_dsi_device *dsi = p->dsi;
+	/*  commands sent in LP mode */
+	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
 	tc358762_gen_write_seq(dsi, 0x10, 0x02, 0x03, 0x00, 0x00, 0x00);//LANE
 	tc358762_gen_write_seq(dsi, 0x64, 0x01, 0x0c, 0x00, 0x00, 0x00);//D0S_CLRSIPOCOUNT

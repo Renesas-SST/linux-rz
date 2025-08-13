@@ -241,4 +241,44 @@
 /* Sequence Channel 0 Descriptor 0-D Register */
 #define SQCH0DSC0DR			0x78c
 
+/* Sequence Channel 1 Set 0 Register */
+#define SQCH1SET0R			0x600
+#define SQCH1SET0R_START		BIT(0)
+
+/* Sequence Channel 1 Status Register */
+#define SQCH1SR				0x610
+#define SQCH1SR_ADESFIN			BIT(8)
+
+/* Sequence Channel 1 Status Clear Register */
+#define SQCH1SCR			0x614
+#define SQCH1SCR_ADESFIN		BIT(8)
+
+/* Sequence Channel 1 Descriptor 0-A register */
+#define SQCH1DSC0AR			0x800
+#define SQCH1DSC0AR_NXACT_TERM		0	/* Bit 28 */
+#define SQCH1DSC0AR_BTA			GENMASK(27, 26)
+#define SQCH1DSC0AR_BTA_NONE		0
+#define SQCH1DSC0AR_BTA_NON_READ	1
+#define SQCH1DSC0AR_BTA_READ		2
+#define SQCH1DSC0AR_BTA_ONLY		3
+#define SQCH1DSC0AR_SPD_HIGH		0
+#define SQCH1DSC0AR_SPD_LOW		BIT(25)
+#define SQCH1DSC0AR_FMT_SHORT		0
+#define SQCH1DSC0AR_FMT_LONG		BIT(24)
+#define SQCH1DSC0AR_DT			GENMASK(21, 16)
+#define SQCH1DSC0AR_DATA1		GENMASK(15, 8)
+#define SQCH1DSC0AR_DATA0		GENMASK(7, 0)
+
+/* Sequence Channel 1 Descriptor 0-B register */
+#define SQCH1DSC0BR			0x804
+#define SQCH1DSC0BR_DTSEL_MEM_SPACE	BIT(24)	/* Use external memory */
+
+/* Sequence Channel 1 Descriptor 0-C register */
+#define SQCH1DSC0CR			0x808
+#define SQCH1DSC0CR_FINACT		BIT(0)
+#define SQCH1DSC0CR_AUXOP		BIT(22)
+
+/* Sequence Channel 1 Descriptor 0-D register */
+#define SQCH1DSC0DR			0x80c
+
 #endif /* __RZG2L_MIPI_DSI_REGS_H__ */
