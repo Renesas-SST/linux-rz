@@ -39,12 +39,14 @@
 #include <video/display_timing.h>
 #include <video/of_display_timing.h>
 #include <video/videomode.h>
+#include <video/mipi_display.h>
 
 #include "panel-toshiba-tc358762.h"
 
 int trigger_bridge = 1;
 
 struct panel_desc {
+	const struct panel_init_cmd *init;
 	const struct drm_display_mode *modes;
 	unsigned int num_modes;
 	const struct display_timing *timings;
@@ -96,10 +98,124 @@ struct tc358762 {
 	struct gpio_desc *enable_gpio;
 };
 
+enum dsi_cmd_type {
+	INIT_DCS_CMD,
+	DELAY_CMD,
+};
+
+struct panel_init_cmd {
+	enum dsi_cmd_type type;
+	size_t len;
+	const char *data;
+};
+
+#define _INIT_DCS_CMD(...)                                                    \
+	{                                                                     \
+		.type = INIT_DCS_CMD, .len = sizeof((char[]){ __VA_ARGS__ }), \
+		.data = (char[])                                              \
+		{                                                             \
+			__VA_ARGS__                                           \
+		}                                                             \
+	}
+
+#define _INIT_DELAY_CMD(...)                                               \
+	{                                                                  \
+		.type = DELAY_CMD, .len = sizeof((char[]){ __VA_ARGS__ }), \
+		.data = (char[])                                           \
+		{                                                          \
+			__VA_ARGS__                                        \
+		}                                                          \
+	}
+
 static inline struct tc358762 *to_tc358762(struct drm_panel *panel)
 {
 	return container_of(panel, struct tc358762, base);
 }
+
+static int panel_init_dcs_cmd(struct tc358762 *panel)
+{
+	struct mipi_dsi_device *dsi = panel->dsi;
+	int i, err = 0;
+
+	if (panel->desc->init) {
+		const struct panel_init_cmd *init_cmds = panel->desc->init;
+
+		for (i = 0; init_cmds[i].len != 0; i++) {
+			const struct panel_init_cmd *cmd = &init_cmds[i];
+
+			switch (cmd->type) {
+			case DELAY_CMD:
+				msleep(cmd->data[0]);
+				err = 0;
+				break;
+
+			case INIT_DCS_CMD:
+				err = mipi_dsi_dcs_write(
+					dsi, cmd->data[0],
+					cmd->len <= 1 ? NULL : &cmd->data[1],
+					cmd->len - 1);
+				break;
+
+			default:
+				err = -EINVAL;
+			}
+
+			if (err < 0) {
+				dev_err(panel->dev,
+					"failed to write command %u\n", i);
+				return err;
+			}
+		}
+	}
+	return 0;
+}
+
+static const struct panel_init_cmd panel_5_a_init[] = {
+	_INIT_DCS_CMD(0xB9, 0xFF, 0x83, 0x94),
+	_INIT_DCS_CMD(0xB1, 0x48, 0x0A, 0x6A, 0x09, 0x33, 0x54, 0x71, 0x71,
+		      0x2E, 0x45),
+	_INIT_DCS_CMD(0xBA, 0x61, 0x03, 0x68, 0x6B, 0xB2, 0xC0),
+	_INIT_DCS_CMD(0xB2, 0x00, 0x80, 0x64, 0x0C, 0x06, 0x2F),
+	_INIT_DCS_CMD(0xB4, 0x1C, 0x78, 0x1C, 0x78, 0x1C, 0x78, 0x01, 0x0C,
+		      0x86, 0x75, 0x00, 0x3F, 0x1C, 0x78, 0x1C, 0x78, 0x1C,
+		      0x78, 0x01, 0x0C, 0x86),
+	_INIT_DCS_CMD(0xD3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x08,
+		      0x32, 0x10, 0x05, 0x00, 0x05, 0x32, 0x13, 0xC1, 0x00,
+		      0x01, 0x32, 0x10, 0x08, 0x00, 0x00, 0x37, 0x03, 0x07,
+		      0x07, 0x37, 0x05, 0x05, 0x37, 0x0C, 0x40),
+	_INIT_DCS_CMD(0xD5, 0x18, 0x18, 0x18, 0x18, 0x22, 0x23, 0x20, 0x21,
+		      0x04, 0x05, 0x06, 0x07, 0x00, 0x01, 0x02, 0x03, 0x18,
+		      0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+		      0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+		      0x18, 0x18, 0x18, 0x18, 0x18, 0x19, 0x19, 0x19, 0x19),
+	_INIT_DCS_CMD(0xD6, 0x18, 0x18, 0x19, 0x19, 0x21, 0x20, 0x23, 0x22,
+		      0x03, 0x02, 0x01, 0x00, 0x07, 0x06, 0x05, 0x04, 0x18,
+		      0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+		      0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+		      0x18, 0x18, 0x18, 0x18, 0x18, 0x19, 0x19, 0x18, 0x18),
+	_INIT_DCS_CMD(0xE0, 0x07, 0x08, 0x09, 0x0D, 0x10, 0x14, 0x16, 0x13,
+		      0x24, 0x36, 0x48, 0x4A, 0x58, 0x6F, 0x76, 0x80, 0x97,
+		      0xA5, 0xA8, 0xB5, 0xC6, 0x62, 0x63, 0x68, 0x6F, 0x72,
+		      0x78, 0x7F, 0x7F, 0x00, 0x02, 0x08, 0x0D, 0x0C, 0x0E,
+		      0x0F, 0x10, 0x24, 0x36, 0x48, 0x4A, 0x58, 0x6F, 0x78,
+		      0x82, 0x99, 0xA4, 0xA0, 0xB1, 0xC0, 0x5E, 0x5E, 0x64,
+		      0x6B, 0x6C, 0x73, 0x7F, 0x7F),
+	_INIT_DCS_CMD(0xCC, 0x0B),
+	_INIT_DCS_CMD(0xC0, 0x1F, 0x73),
+	_INIT_DCS_CMD(0xB6, 0x6B, 0x6B),
+	_INIT_DCS_CMD(0xD4, 0x02),
+	_INIT_DCS_CMD(0xBD, 0x01),
+	_INIT_DCS_CMD(0xB1, 0x00),
+	_INIT_DCS_CMD(0xBD, 0x00),
+	_INIT_DCS_CMD(0xBF, 0x40, 0x81, 0x50, 0x00, 0x1A, 0xFC, 0x01),
+	_INIT_DCS_CMD(0x11),
+	_INIT_DELAY_CMD(200),
+	_INIT_DCS_CMD(0xB2, 0x00, 0x80, 0x64, 0x0C, 0x06, 0x2F, 0x00, 0x00,
+		      0x00, 0x00, 0xC0, 0x18),
+	_INIT_DCS_CMD(0x29),
+	_INIT_DELAY_CMD(80),
+	{},
+};
 
 static int tc358762_get_fixed_modes(struct tc358762 *panel)
 {
@@ -227,6 +343,11 @@ static int tc358762_unprepare(struct drm_panel *panel)
 	if (!p->prepared)
 		return 0;
 
+	if (p->desc->init) {
+		mipi_dsi_dcs_set_display_off(p->dsi);
+		mipi_dsi_dcs_enter_sleep_mode(p->dsi);
+	}
+
 	if (p->enable_gpio)
 		gpiod_direction_output(p->enable_gpio, 0);
 
@@ -246,7 +367,9 @@ static void tc358762_gen_write(struct mipi_dsi_device *dsi, const void *data, si
 
 	ret = mipi_dsi_generic_write(dsi, data, len);
 	if (ret < 0)
-		dev_err(&dsi->dev, "failed to writing gen seq\n");
+		dev_err(&dsi->dev, "failed to writing gen seq, ret=%d\n", ret);
+	else
+		dev_info(&dsi->dev, "wrote gen seq, len=%zu\n", len);
 }
 
 #define tc358762_gen_write_seq(dsi, seq...) \
@@ -262,7 +385,7 @@ static int tc358762_dcs_write(struct mipi_dsi_device *dsi, const void *data, siz
 	ret = mipi_dsi_dcs_write_buffer(dsi, data, len);
 	if (ret < 0)
 		dev_err(&dsi->dev, "failed to write DCS seq, ret=%d\n", ret);
-	else
+    	else
 		dev_info(&dsi->dev, "wrote DCS seq, len=%zu\n", len);
     return ret;
 }
@@ -276,6 +399,7 @@ static int tc358762_dcs_write(struct mipi_dsi_device *dsi, const void *data, siz
 static int tc358762_dsi_init(struct tc358762 *p)
 {
 	struct mipi_dsi_device *dsi = p->dsi;
+	int ret;
 	/*  commands sent in LP mode */
 	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
@@ -300,6 +424,44 @@ static int tc358762_dsi_init(struct tc358762 *p)
 	return 0;
 }
 
+// Init Panel using DCS	commands
+static int tc358762_panel_init(struct tc358762 *p)
+{
+	struct mipi_dsi_device *dsi = p->dsi;
+	int ret;
+
+	/*  commands sent in LP mode */
+	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	dev_dbg(p->dev, "Initializing LCD panel via DCS commands...\n");
+
+	ret = panel_init_dcs_cmd(p);
+	if (ret < 0) {
+		dev_err(p->dev, "failed to init panel: %d\n", ret);
+		return ret;
+	}
+
+	ret = mipi_dsi_dcs_set_tear_on(dsi, MIPI_DSI_DCS_TEAR_MODE_VBLANK);
+	if (ret)
+		return ret;
+
+	ret = mipi_dsi_dcs_exit_sleep_mode(dsi);
+	if (ret < 0) {
+		dev_err(p->dev, "Failed to exit sleep mode: %d\n", ret);
+		return ret;
+	}
+	msleep(30);
+
+	ret = mipi_dsi_dcs_set_display_on(dsi);
+	if (ret < 0) {
+		dev_err(p->dev, "Failed to set display on: %d\n", ret);
+		return ret;
+	}
+	msleep(50);
+
+    return 0;
+}
+
 static int tc358762_prepare(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
@@ -320,6 +482,14 @@ static int tc358762_prepare(struct drm_panel *panel)
 	if (p->desc && p->desc->delay.prepare)
 		msleep(p->desc->delay.prepare);
 
+	if (p->desc->init) {
+		err = tc358762_panel_init(p);
+		if (err < 0) {
+			dev_err(panel->dev, "failed to init panel: %d\n", err);
+			return err;
+		}
+	}
+
 	p->prepared = true;
 
 	return 0;
@@ -328,10 +498,11 @@ static int tc358762_prepare(struct drm_panel *panel)
 static int tc358762_enable(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
+	int ret;
 
-	if (p->enabled)
+	/* Skip if panel is already enabled or DCS init is available */
+	if (p->enabled || p->desc->init)
 		return 0;
-
 	pr_info("panel enable\n");
 
 	if (trigger_bridge) {
@@ -546,6 +717,7 @@ static const struct drm_display_mode tc358762_mode = {
 
 static const struct bridge_desc tc358762_bridge = {
 	.desc = {
+		.init = NULL, // if panel support DCS command, replace by struct panel_init_cmd array
 		.modes = &tc358762_mode,
 		.num_modes = 1,
 		.bpc = 8,
