@@ -42,6 +42,7 @@
 #include <video/mipi_display.h>
 
 #include "panel-toshiba-tc358762.h"
+#include <dt-bindings/display/ws-panel-ids.h>
 
 int trigger_bridge = 1;
 
@@ -96,6 +97,7 @@ struct tc358762 {
 	struct i2c_adapter *ddc;
 
 	struct gpio_desc *enable_gpio;
+	const struct panel_init_cmd *init;
 };
 
 enum dsi_cmd_type {
@@ -137,8 +139,8 @@ static int panel_init_dcs_cmd(struct tc358762 *panel)
 	struct mipi_dsi_device *dsi = panel->dsi;
 	int i, err = 0;
 
-	if (panel->desc->init) {
-		const struct panel_init_cmd *init_cmds = panel->desc->init;
+	if (panel->init) {
+		const struct panel_init_cmd *init_cmds = panel->init;
 
 		for (i = 0; init_cmds[i].len != 0; i++) {
 			const struct panel_init_cmd *cmd = &init_cmds[i];
@@ -343,7 +345,7 @@ static int tc358762_unprepare(struct drm_panel *panel)
 	if (!p->prepared)
 		return 0;
 
-	if (p->desc->init) {
+	if (p->init) {
 		mipi_dsi_dcs_set_display_off(p->dsi);
 		mipi_dsi_dcs_enter_sleep_mode(p->dsi);
 	}
@@ -482,7 +484,7 @@ static int tc358762_prepare(struct drm_panel *panel)
 	if (p->desc && p->desc->delay.prepare)
 		msleep(p->desc->delay.prepare);
 
-	if (p->desc->init) {
+	if (p->init) {
 		err = tc358762_panel_init(p);
 		if (err < 0) {
 			dev_err(panel->dev, "failed to init panel: %d\n", err);
@@ -501,7 +503,7 @@ static int tc358762_enable(struct drm_panel *panel)
 	int ret;
 
 	/* Skip if panel is already enabled or DCS init is available */
-	if (p->enabled || p->desc->init)
+	if (p->enabled || p->init)
 		return 0;
 	pr_info("panel enable\n");
 
@@ -717,7 +719,6 @@ static const struct drm_display_mode tc358762_mode = {
 
 static const struct bridge_desc tc358762_bridge = {
 	.desc = {
-		.init = NULL, // if panel support DCS command, replace by struct panel_init_cmd array
 		.modes = &tc358762_mode,
 		.num_modes = 1,
 		.bpc = 8,
@@ -748,7 +749,8 @@ int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 	const struct bridge_desc *desc;
 	const struct of_device_id *id;
 	const struct panel_desc *pdesc;
-	u32 val;
+	struct tc358762 *panel;
+	u32 val, panel_id;
 	int err, timeout = 10;
 
 	id = of_match_node(dsi_of_match, dsi->dev.of_node);
@@ -774,6 +776,7 @@ int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 		pdesc = NULL;
 	}
 	err = tc358762_mipi_probe(dsi, pdesc);
+	panel = dev_get_drvdata(&dsi->dev);
 
 	if (err < 0)
 		return err;
@@ -786,6 +789,19 @@ int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 
 	if (!of_property_read_u32(dsi->dev.of_node, "dsi,lanes", &val))
 		dsi->lanes = val;
+
+	if (!of_property_read_u32(dsi->dev.of_node, "panel-id", &panel_id)) {
+		switch (panel_id) {
+		case PANEL_5_V2:
+			panel->init = panel_5_a_init;
+			dev_dbg(&dsi->dev, "panel init as PANEL_5_V2\n");
+			break;
+		default:
+			panel->init = NULL;
+			dev_dbg(&dsi->dev, "panel init as default\n");
+			break;
+		}
+	}
 
 	return mipi_dsi_attach(dsi);
 }

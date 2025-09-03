@@ -9,6 +9,7 @@
 #include "r9a07g044l2.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
+#include <dt-bindings/display/ws-panel-ids.h>
 
 / {
 	compatible = "rzg2l-sbc", "renesas,r9a07g044l2", "renesas,r9a07g044";
@@ -869,6 +870,8 @@
 		compatible = "rzsbc,tc358762";
 		reg = <0>;
 		status = "disabled";
+		/* Example: to change the panel version, set panel-id = <PANEL_5_V1>; (default value) */
+		/* Use this property to specify the panel version */
 
 		port {
 			panel_in: endpoint {
