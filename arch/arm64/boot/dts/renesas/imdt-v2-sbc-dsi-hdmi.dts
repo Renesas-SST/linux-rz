@@ -1,0 +1,64 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+
+	hdmi-out {
+		compatible = "hdmi-connector";
+		type = "d";
+	
+		port {
+			hdmi_con_out: endpoint {
+				remote-endpoint = <&adv7533_out>;
+			};
+		};
+	};
+};
+
+&dsi_adaptor_i2c {
+	status = "okay";
+	adv7533: hdmi@39 {
+		compatible = "adi,adv7533";
+		reg = <0x39>;
+		status = "okay";
+		interrupt-parent = <&pinctrl>;
+		interrupts = <RZG2L_GPIO(7, 1) IRQ_TYPE_LEVEL_LOW>;
+
+		adi,dsi-lanes = <4>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				adv7533_in: endpoint@0 {
+					remote-endpoint = <&dsi0_out>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+				adv7533_out: endpoint@1 {
+					remote-endpoint = <&hdmi_con_out>;
+				};
+			};
+		};
+	};
+};
+
+&dsi0 {
+	status = "okay";
+	ports {
+		port@1 {
+			dsi0_out: endpoint {
+				remote-endpoint = <&adv7533_in>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};

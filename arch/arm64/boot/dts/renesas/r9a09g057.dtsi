@@ -39,19 +39,20 @@
 		clock-frequency = <0>;
 	};
 
-	audio_clkb: audio-clkb {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		/* This value must be overridden by the board */
-		clock-frequency = <0>;
-	};
+	/* imdt-v2h-sbc - Clocks B & C require removal for audio rcar_sound*/
+	//audio_clkb: audio-clkb {
+	//	compatible = "fixed-clock";
+	//	#clock-cells = <0>;
+	//	/* This value must be overridden by the board */
+	//	clock-frequency = <0>;
+	//};
 
-	audio_clkc: audio-clkc {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		/* This value must be overridden by the board */
-		clock-frequency = <0>;
-	};
+	//audio_clkc: audio-clkc {
+	//	compatible = "fixed-clock";
+	//	#clock-cells = <0>;
+	//	/* This value must be overridden by the board */
+	//	clock-frequency = <0>;
+	//};
 
 	rtxin_clk: rtxin-clk {
 		compatible = "fixed-clock";
@@ -308,15 +309,19 @@
 			compatible = "renesas,r9a09g057-cpg", "syscon";
 			reg = <0 0x10420000 0 0x10000>;
 			clocks = <&audio_extal_clk>, <&audio_clka>,
-				 <&audio_clkb>, <&audio_clkc>,
 				 <&rtxin_clk>, <&qextal_clk>,
 				 <&et0_txc_tx_clk>, <&et0_rxc_rx_clk>,
 				 <&et1_txc_tx_clk>, <&et1_rxc_rx_clk>;
+				 /* imdt-v2h-sbc - Clocks B & C require removal for audio rcar_sound*/
+				 //<&audio_clkb>, <&audio_clkc>,
+
 			clock-names = "audio_extal", "audio_clka",
-				      "audio_clkb", "audio_clkc",
 				      "rtxin", "qextal",
 				      "et0_txc_tx_clk", "et0_rxc_rx_clk",
 				      "et1_txc_tx_clk", "et1_rxc_rx_clk";
+					  /* imdt-v2h-sbc - Clocks B & C require removal for audio rcar_sound*/
+					  //"audio_clkb", "audio_clkc",
+
 			#clock-cells = <2>;
 			#reset-cells = <1>;
 			#power-domain-cells = <0>;
@@ -2850,6 +2855,7 @@
  			phy-names = "usb1";
  			status = "disabled";
  		};
+
 		rcar_sound: sound@13c00000 {
 			/*
 			 * #sound-dai-cells is required
@@ -2905,8 +2911,8 @@
 				 <&cpg CPG_MOD 248>,
 				 <&cpg CPG_MOD 249>,
 				 <&cpg CPG_MOD 251>,
-				 <&cpg CPG_MOD 252>,
-				 <&cpg CPG_MOD 253>,
+				 //<&cpg CPG_MOD 252>,
+				 //<&cpg CPG_MOD 253>,
 				 <&cpg CPG_MOD 250>,
 				 <&cpg CPG_MOD 361>,
 				 <&cpg CPG_MOD 360>,

@@ -80,7 +80,12 @@ enum rz_cru_type {
 
 /* Number of HW buffers */
 #define RZG2L_CRU_HW_BUFFER_MAX		8
-#define RZG2L_CRU_HW_BUFFER_DEFAULT	3
+#define RZG2L_CRU_HW_BUFFER_DEFAULT	8
+#define RZG2L_CRU_HW_BUFFER_VALUE     4
+
+#define CRU_V4L_NUM_BUFFERS_MIN 12
+#define CRU_V4L_NUM_BUFFERS_MAX 20
+#define CRU_V4L_NUM_BUFFERS_DEFAULT 12
 
 /* Address alignment mask for HW buffers */
 #define RZG2L_CRU_HW_BUFFER_MASK	0x1ff

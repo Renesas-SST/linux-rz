@@ -191,6 +191,7 @@ static void rzg2l_cru_fill_hw_slot(struct rzg2l_cru_dev *cru, int slot)
 	dev_dbg(cru->dev, "Filling HW slot: %d\n", slot);
 
 	if (list_empty(&cru->buf_list)) {
+		cru_dbg(cru, "Using scratch buffer due to lack of free buffers \n");
 		cru->queue_buf[slot] = NULL;
 		phys_addr = cru->scratch_phys;
 	} else {
@@ -858,19 +859,23 @@ irqreturn_t rzv2h_cru_irq(int irq, void *data)
 	amnmadrs |= (((unsigned long)rzg2l_cru_read(cru, AMnMADRSH)) << 32);
 
 	/* Check current HW slot based on current MB address */
+	write_complete = 0;
 	for (slot = 0; slot < cru->num_buf; slot++) {
 		dma_addr_t tmp;
+		dma_addr_t dma_size;
 
 		tmp = amnmbxaddrh[cru->id][slot];
 		tmp = (tmp << 32) | amnmbxaddrl[cru->id][slot];
 
-		tmp = amnmadrs - tmp;
-		if (((long)tmp) && tmp <= cru->format.sizeimage) {
+		dma_size = amnmadrs - tmp;
+		if (((long)dma_size) && dma_size <= cru->format.sizeimage) {
 			write_complete = 1;
+			cru_dbg(cru, "write_done: slot %d at 0x%llx. dma_size is 0x%llx\n",  slot, tmp, dma_size);
 			break;
 		}
 	}
 
+	/* Prepare for capture and update state */
 	if (!write_complete) {
 		dev_err(cru->dev, "Invalid MB address 0x%llx\n", amnmadrs);
 		goto done;
