@@ -224,5 +224,9 @@ dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h4-mxt-ar0331-sd.dtb r9a09g057h4-mxt-im
 				r9a09g057h4-mxt-imx219-sd.dtb r9a09g057h4-mxt-imx462-sd.dtb \
 				r9a09g057h4-mxt-tevs-sd.dtb
 
+dtb-$(CONFIG_ARCH_R9A09G057) += imdt-v2h-sbc.dtb
+dtb-$(CONFIG_ARCH_R9A09G057) += imdt-v2-sbc-dsi-panel.dtb
+dtb-$(CONFIG_ARCH_R9A09G057) += imdt-v2-sbc-dsi-hdmi.dtb
+
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += draak-ebisu-panel-aa104xd12.dtbo
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += salvator-panel-aa104xd12.dtbo

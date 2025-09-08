@@ -7,7 +7,7 @@
  */
 
 /dts-v1/;
-#include "r9a09g057h44-rzv2h-evk.dts"
+#include "rzv2h-evk-ver1.dts"
 
 &csi20 {
 	status = "okay";

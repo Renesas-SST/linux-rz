@@ -1,0 +1,58 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	disp_reg: dsi0_display_3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "dsi0 disp regulator";
+		regulator-min-microvolt = <3300000>;  // Minimum voltage in microvolts
+		regulator-max-microvolt = <3300000>;  // Maximum voltage in microvolts
+
+		enable-active-high;                  // Optional, indicates the GPIO is active high
+		gpio = <&pinctrl RZG2L_GPIO(10, 5) GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&pinctrl {
+	disp_bl_en {
+		gpio-hog;
+		gpios = <RZG2L_GPIO(10, 7) GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "disp_bl_en";
+	};
+};
+
+&dsi_adaptor_i2c {
+	status = "okay";
+	touch: gt911@14 {
+		compatible = "goodix,gt911";
+		reg = <0x14>;
+		status = "okay";
+		interrupt-parent = <&pinctrl>;
+        interrupts = <RZG2L_GPIO(7, 1) IRQ_TYPE_LEVEL_LOW>;
+		irq-gpios = <&pinctrl RZG2L_GPIO(7, 1) GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pinctrl RZG2L_GPIO(7, 2) GPIO_ACTIVE_HIGH>; // signal is ACTIVE_LOW, but driver inverts it
+	};
+};
+
+&dsi0 {
+	panel@0 {
+		compatible = "imdt,im-msc-006";
+		power-supply = <&disp_reg>;
+		reg = <0>;
+		port {
+			panel_in: endpoint {
+			remote-endpoint = <&dsi0_out>;
+			};
+		};
+	};
+};
+
+&dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <1 2 3 4>;
+};
