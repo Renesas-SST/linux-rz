@@ -870,8 +870,7 @@
 		compatible = "rzsbc,tc358762";
 		reg = <0>;
 		status = "disabled";
-		/* Example: to change the panel version, set panel-id = <PANEL_5_V1>; (default value) */
-		/* Use this property to specify the panel version */
+		panel-id = <PANEL_5_V1>;
 
 		port {
 			panel_in: endpoint {

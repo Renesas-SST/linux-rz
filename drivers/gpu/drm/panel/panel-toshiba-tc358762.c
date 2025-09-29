@@ -427,7 +427,7 @@ static int tc358762_dsi_init(struct tc358762 *p)
 }
 
 // Init Panel using DCS	commands
-static int tc358762_panel_init(struct tc358762 *p)
+static int tc358762_panel_dcs_init(struct tc358762 *p)
 {
 	struct mipi_dsi_device *dsi = p->dsi;
 	int ret;
@@ -485,7 +485,7 @@ static int tc358762_prepare(struct drm_panel *panel)
 		msleep(p->desc->delay.prepare);
 
 	if (p->init) {
-		err = tc358762_panel_init(p);
+		err = tc358762_panel_dcs_init(p);
 		if (err < 0) {
 			dev_err(panel->dev, "failed to init panel: %d\n", err);
 			return err;
@@ -500,7 +500,6 @@ static int tc358762_prepare(struct drm_panel *panel)
 static int tc358762_enable(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
-	int ret;
 
 	/* Skip if panel is already enabled or DCS init is available */
 	if (p->enabled || p->init)
