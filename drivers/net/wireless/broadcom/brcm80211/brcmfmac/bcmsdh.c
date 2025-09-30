@@ -243,12 +243,6 @@ static int brcmf_sdiod_set_backplane_window(struct brcmf_sdio_dev *sdiodev,
 	u32 v, bar0 = addr & SBSDIO_SBWINDOW_MASK;
 	int err = 0, i;
 
-	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
-		if (!sdiodev->ignore_bus_error)
-			brcmf_err("ERROR: Write operation when bus is in sleep state\n");
-		return -EPERM;
-	}
-
 	if (sdiodev->sbwad_valid && (bar0 == sdiodev->sbwad))
 		return 0;
 
@@ -278,11 +272,9 @@ u32 brcmf_sdiod_readl(struct brcmf_sdio_dev *sdiodev, u32 addr, int *ret)
 	brcmf_dbg(SDIOEXT, "addr 0x%x\n", addr);
 
 	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
-		if (!sdiodev->ignore_bus_error)
-			brcmf_err("ERROR: Read operation when bus is in sleep state\n");
-		if (ret)
-			*ret = -EPERM;
-		return data;
+		brcmf_err("Error: Access not allowed - bus in sleep state\n");
+		retval = -EPERM;
+		goto out;
 	}
 
 	retval = brcmf_sdiod_set_backplane_window(sdiodev, addr);
@@ -354,12 +346,11 @@ void brcmf_sdiod_writel(struct brcmf_sdio_dev *sdiodev, u32 addr,
 	bool byte_access = false;
 
 	brcmf_dbg(SDIOEXT, "addr 0x%x val 0x%x\n", addr, data);
+
 	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
-		if (!sdiodev->ignore_bus_error)
-			brcmf_err("ERROR: Write operation when bus is in sleep state\n");
-		if (ret)
-			*ret = -EPERM;
-		return;
+		brcmf_err("Error: Access not allowed - bus in sleep state\n");
+		retval = -EPERM;
+		goto out;
 	}
 
 	retval = brcmf_sdiod_set_backplane_window(sdiodev, addr);
@@ -409,8 +400,7 @@ static int brcmf_sdiod_skbuff_read(struct brcmf_sdio_dev *sdiodev,
 	bool err_gt_thr = false;
 
 	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
-		if (!sdiodev->ignore_bus_error)
-			brcmf_err("ERROR: Read operation when bus is in sleep state\n");
+		brcmf_err("ERROR: Read operation when bus is in sleep state\n");
 		return -EPERM;
 	}
 
@@ -456,8 +446,7 @@ static int brcmf_sdiod_skbuff_write(struct brcmf_sdio_dev *sdiodev,
 	bool err_gt_thr = false;
 
 	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
-		if (!sdiodev->ignore_bus_error)
-			brcmf_err("ERROR: Write operation when bus is in sleep state\n");
+		brcmf_err("ERROR: Write operation when bus is in sleep state\n");
 		return -EPERM;
 	}
 
@@ -492,9 +481,8 @@ static int mmc_submit_one(struct mmc_data *md, struct mmc_request *mr,
 	int ret;
 
 	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
-		if (!sdiodev->ignore_bus_error)
-			brcmf_err("ERROR: %s operation when bus is in sleep state\n",
-				  write ? "Write" : "Read");
+		brcmf_err("ERROR: %s operation when bus is in sleep state\n",
+			  write ? "Write" : "Read");
 		return -EPERM;
 	}
 
@@ -882,6 +870,11 @@ brcmf_sdiod_ramrw(struct brcmf_sdio_dev *sdiodev, bool write, u32 address,
 	u32 sdaddr;
 	uint dsize;
 	bool err_gt_thr = false;
+
+	if (brcmf_sdio_bus_sleep_state(sdiodev->bus)) {
+		brcmf_err("Error: RAM access not allowed - bus in sleep state\n");
+		return -EPERM;
+	}
 
 	dsize = min_t(uint, SBSDIO_SB_OFT_ADDR_LIMIT, size);
 	pkt = __dev_alloc_skb(dsize, GFP_KERNEL);

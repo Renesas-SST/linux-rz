@@ -567,6 +567,7 @@ struct brcmf_sdio {
 	struct brcmf_sdio_count sdcnt;
 	bool sr_enabled; /* SaveRestore enabled */
 	bool sleeping;
+	rwlock_t sleep_lock;	/* lock for sdio sleep protection */
 
 	u8 tx_hdrlen;		/* sdio bus header length for tx packet */
 	bool txglom;		/* host tx glomming enable flag */
@@ -739,7 +740,17 @@ static const struct brcmf_firmware_mapping brcmf_sdio_fwnames[] = {
 
 bool brcmf_sdio_bus_sleep_state(struct brcmf_sdio *bus)
 {
-	return bus->sleeping;
+	unsigned long flags;
+	bool result;
+
+	read_lock_irqsave(&bus->sleep_lock, flags);
+	if (bus->sdiodev->kso_state == BRCMF_KSO_ON)
+		result = false;
+	else
+		result = true;
+	read_unlock_irqrestore(&bus->sleep_lock, flags);
+
+	return result;
 }
 
 static inline bool brcmf_sdio_bus_access_allowed(u32 addr)
@@ -751,7 +762,8 @@ u8 brcmf_sdiod_func0_rb(struct brcmf_sdio_dev *sdiodev, u32 addr, int *ret)
 {
 	brcmf_dbg(SDIOEXT, "addr 0x%x\n", addr);
 
-	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) || sdiodev->ignore_bus_error)
+	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) ||
+	    brcmf_sdio_bus_access_allowed(addr))
 		return brcmf_sdiod_func0_rb_ext(sdiodev, addr, ret);
 
 	brcmf_err(" Error Access Not allowed\n");
@@ -765,7 +777,8 @@ void brcmf_sdiod_func0_wb(struct brcmf_sdio_dev *sdiodev, u32 addr, u32 data,
 {
 	brcmf_dbg(SDIOEXT, "addr 0x%x val 0x%x\n", addr, data);
 
-	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) || sdiodev->ignore_bus_error) {
+	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) ||
+	    brcmf_sdio_bus_access_allowed(addr)) {
 		brcmf_sdiod_func0_wb_ext(sdiodev, addr, data, ret);
 	} else {
 		brcmf_err(" Error Access Not allowed\n");
@@ -778,7 +791,8 @@ u8 brcmf_sdiod_readb(struct brcmf_sdio_dev *sdiodev, u32 addr, int *ret)
 {
 	brcmf_dbg(SDIOEXT, "addr 0x%x\n", addr);
 
-	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) || brcmf_sdio_bus_access_allowed(addr))
+	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) ||
+	    brcmf_sdio_bus_access_allowed(addr))
 		return brcmf_sdiod_readb_ext(sdiodev, addr, ret);
 
 	brcmf_err(" Error Access Not allowed\n");
@@ -792,7 +806,8 @@ void brcmf_sdiod_writeb(struct brcmf_sdio_dev *sdiodev, u32 addr, u32 data,
 {
 	brcmf_dbg(SDIOEXT, "addr 0x%x val 0x%x\n", addr, data);
 
-	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) || brcmf_sdio_bus_access_allowed(addr)) {
+	if (!brcmf_sdio_bus_sleep_state(sdiodev->bus) ||
+	    brcmf_sdio_bus_access_allowed(addr)) {
 		brcmf_sdiod_writeb_ext(sdiodev, addr, data, ret);
 	} else {
 		brcmf_err(" Error Access Not allowed\n");
@@ -865,7 +880,7 @@ brcmf_sdio_kso_control(struct brcmf_sdio *bus, bool on)
 	bool l6_err_active = BRCMF_BUS_TUNING_L6_ON() &&
 				     brcmf_sdio_get_err_cnt_status(bus, NULL, 0, false);
 
-	brcmf_dbg(TRACE, "Enter: on=%d\n", on);
+	brcmf_dbg(SDIO, "Enter: on=%d\n", on);
 
 	if (!l6_err_active)
 		sdio_retune_crc_disable(bus->sdiodev->func1);
@@ -892,7 +907,11 @@ brcmf_sdio_kso_control(struct brcmf_sdio *bus, bool on)
 	 * bit, to avoid polling of KSO bit.
 	 */
 	if (!on) {
+		unsigned long flags;
 		bus->sdiodev->sbwad_valid = 0;
+		write_lock_irqsave(&bus->sleep_lock, flags);
+		sdiod->kso_state = BRCMF_KSO_OFF;
+		write_unlock_irqrestore(&bus->sleep_lock, flags);
 		return err;
 	}
 
@@ -956,24 +975,26 @@ brcmf_sdio_kso_control(struct brcmf_sdio *bus, bool on)
 			  "kso_seq_time=%luns rd_val=0x%x err=%d\n",
 			   on, try_cnt, err_cnt, kso_loop_time, rd_val, err);
 
-	if (bus->idleclock == BRCMF_IDLE_STOP) {
+	if (!err) {
+		unsigned long flags;
+
+		write_lock_irqsave(&bus->sleep_lock, flags);
+		sdiod->kso_state = BRCMF_KSO_ON;
+		write_unlock_irqrestore(&bus->sleep_lock, flags);
+	}
+
+	if (!err && bus->idleclock == BRCMF_IDLE_STOP) {
 		/* Change the bus width to 4-bit mode on kso 1 */
-		sdiod->ignore_bus_error = true;
 		brcmf_sdio_set_sdbus_clk_width(bus, SDIO_SDMODE_4BIT);
-		sdiod->ignore_bus_error = false;
 	}
 
 	/* New KSO Sequence for H1 DDR50 Mode*/
-	if (bus->h1_ddr50_mode) {
+	if (!err && bus->h1_ddr50_mode) {
 		u32 ret, chipid;
 
-		/* Set Flag to ignore SDIO Bus access error during KSO */
-		sdiod->ignore_bus_error = true;
 		chipid = brcmf_sdiod_readl(sdiod,
 					   bus->ci->ccsec->bus_corebase + SD_REG(chipid),
 					   &ret);
-		/* Clear Flag to ignore SDIO Bus access error during KSO */
-		sdiod->ignore_bus_error = false;
 		brcmf_dbg(SDIO, "chipid: 0x%x ret = 0x%x\n", chipid, ret);
 	}
 
@@ -992,9 +1013,7 @@ brcmf_sdio_kso_control(struct brcmf_sdio *bus, bool on)
 		sdio_retune_crc_enable(bus->sdiodev->func1);
 
 	if (BRCMF_BUS_TUNING_L2_ON() && brcmf_sdio_get_err_cnt_status(bus, NULL, 0, false)) {
-		sdiod->ignore_bus_error = true;
 		brcmf_sdiod_readl(sdiod, bus->sdio_core->base + SD_REG(intstatus), &ret);
-		sdiod->ignore_bus_error = false;
 	}
 
 	return err;
@@ -4690,6 +4709,7 @@ static void brcmf_sdio_bus_watchdog(struct brcmf_sdio *bus)
 					brcmf_sdio_wd_timer(bus, false);
 				bus->idlecount = 0;
 
+				/* check dpc again to avoid race */
 				if (!bus->dpc_triggered && !bus->dpc_running)
 					brcmf_sdio_bus_sleep(bus, true, false);
 				else
@@ -5498,6 +5518,7 @@ static void brcmf_sdio_firmware_callback(struct device *dev, int err,
 	u32 nvram_len;
 	u8 saveclk, bpreq;
 	u8 devctl;
+	unsigned long flags;
 
 	brcmf_dbg(ULP, "Enter: dev=%s, err=%d\n", dev_name(dev), err);
 
@@ -5547,6 +5568,9 @@ static void brcmf_sdio_firmware_callback(struct device *dev, int err,
 	brcmf_sdiod_writel(sdiod, core->base + SD_REG(tosbmailboxdata),
 			   SDPCM_PROT_VERSION << SMB_DATA_VERSION_SHIFT, NULL);
 
+	write_lock_irqsave(&bus->sleep_lock, flags);
+	bus->sdiodev->kso_state = BRCMF_KSO_ON;
+	write_unlock_irqrestore(&bus->sleep_lock, flags);
 	err = sdio_enable_func(sdiod->func2);
 
 	brcmf_dbg(INFO, "enable F2: err=%d\n", err);
@@ -5973,6 +5997,7 @@ int brcmf_sdio_probe(struct brcmf_sdio_dev *sdiodev)
 
 	spin_lock_init(&bus->rxctl_lock);
 	spin_lock_init(&bus->txq_lock);
+	rwlock_init(&bus->sleep_lock);
 	init_waitqueue_head(&bus->ctrl_wait);
 	init_waitqueue_head(&bus->dcmd_resp_wait);
 	/* Initialize thread based operation and lock */

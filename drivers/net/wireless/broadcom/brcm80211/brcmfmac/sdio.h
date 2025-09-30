@@ -237,6 +237,18 @@ struct brcmf_ulp_event {
 	u16 ulp_dongle_action;
 };
 
+/**
+ * enum brcmf_kso_state - KSO (Keep SDIO On) state of the device.
+ *
+ * @BRCMF_KSO_INIT: Initial/uninitialized state.
+ * @BRCMF_KSO_OFF: KSO disabled, device in sleep mode.
+ * @BRCMF_KSO_ON: KSO enabled, device awake and ready.
+ */
+enum brcmf_kso_state {
+	BRCMF_KSO_OFF = 1,
+	BRCMF_KSO_ON = 2
+};
+
 struct brcmf_sdio_dev {
 	struct sdio_func *func1;
 	struct sdio_func *func2;
@@ -270,7 +282,7 @@ struct brcmf_sdio_dev {
 	struct brcmf_ulp fmac_ulp;
 	bool ulp;
 	bool redownload_fw;
-	bool ignore_bus_error;	/* Ignore SDIO Bus access error*/
+	enum brcmf_kso_state kso_state;
 };
 
 /* sdio core registers */
