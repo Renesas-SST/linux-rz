@@ -146,7 +146,8 @@ dtb-$(CONFIG_ARCH_R9A09G011) += r9a09g011-v2mevk2.dtb
 
 dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h4-evk-ver1.dtb r9a09g057h4-mxt-ar0331.dtb \
 								r9a09g057h4-mxt-imx135.dtb r9a09g057h4-mxt-imx219.dtb \
-								r9a09g057h4-mxt-imx462.dtb r9a09g057h4-mxt-tevs.dtb
+								r9a09g057h4-mxt-imx462.dtb r9a09g057h4-mxt-tevs.dtb \
+								r9a09g057h4-rdk-ver1.dtb
 
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += draak-ebisu-panel-aa104xd12.dtbo
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += salvator-panel-aa104xd12.dtbo
