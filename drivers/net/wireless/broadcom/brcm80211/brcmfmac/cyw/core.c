@@ -25,9 +25,6 @@
 #define BRCMF_CYW_E_RSSI		56
 #define BRCMF_CYW_E_LAST		197
 
-#define MGMT_AUTH_FRAME_DWELL_TIME	4000
-#define MGMT_AUTH_FRAME_WAIT_TIME	(MGMT_AUTH_FRAME_DWELL_TIME + 100)
-
 static int brcmf_cyw_set_sae_pwd(struct brcmf_if *ifp,
 				 struct cfg80211_crypto_settings *crypto)
 {

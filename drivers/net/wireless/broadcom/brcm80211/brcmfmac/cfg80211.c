@@ -6639,6 +6639,136 @@ brcmf_cfg80211_update_mgmt_frame_registrations(struct wiphy *wiphy,
 	vif->mgmt_rx_reg = upd->interface_stypes;
 }
 
+bool brcmf_send_action_frame(struct brcmf_cfg80211_info *cfg,
+			     struct net_device *ndev,
+			     struct brcmf_fil_af_params_le *af_params,
+			     struct brcmf_cfg80211_vif *vif,
+			     struct ieee80211_channel *peer_listen_chan)
+{
+	struct brcmf_if *ifp = netdev_priv(ndev);
+	struct brcmf_fil_action_frame_le *action_frame;
+	struct brcmf_pub *drvr = cfg->pub;
+	u16 action_frame_len;
+	bool ack = false;
+	u8 action;
+	struct brcmf_fil_af_params_v2_le *af_params_v2;
+	s32 timeout;
+	s32 err = 0;
+
+	action_frame = &af_params->action_frame;
+	action_frame_len = le16_to_cpu(action_frame->len);
+	action = action_frame->data[DOT11_ACTION_ACT_OFF];
+
+	/* Add the default dwell time. Dwell time to stay off-channel */
+	/* to wait for a response action frame after transmitting an  */
+	/* GO Negotiation action frame                                */
+	af_params->dwell_time = cpu_to_le32(COMMON_ACTION_FRM_DWELL_TIME);
+
+	if (brcmf_ieee80211_is_gas_action(action_frame->data,
+					  action_frame_len)) {
+		/* service discovery process */
+		if (action == IEEE80211_SD_ACTION_ID_GAS_IREQ ||
+		    action == IEEE80211_SD_ACTION_ID_GAS_CREQ) {
+			af_params->dwell_time =
+				cpu_to_le32(COMMON_ACTION_FRM_MED_DWELL_TIME);
+		} else if (action == IEEE80211_SD_ACTION_ID_GAS_IRESP ||
+			   action == IEEE80211_SD_ACTION_ID_GAS_CRESP) {
+			/* configure service discovery response frame */
+			af_params->dwell_time =
+				cpu_to_le32(COMMON_ACTION_FRM_MIN_DWELL_TIME);
+		} else {
+			bphy_err(drvr, "Unknown action type: %d\n", action);
+			err = -EINVAL;
+			goto exit;
+		}
+	}
+
+	/* if scan is ongoing, abort current scan. */
+	if (test_bit(BRCMF_SCAN_STATUS_BUSY, &cfg->scan_status))
+		brcmf_abort_scanning(cfg);
+
+	if (drvr->wlc_ver.wlc_ver_major == BRCMF_AF_PARAM_V2_FW_MAJOR &&
+	    drvr->wlc_ver.wlc_ver_minor >= BRCMF_AF_PARAM_V2_FW_MINOR) {
+		af_params_v2 = kzalloc(sizeof(*af_params_v2), GFP_KERNEL);
+		if (!af_params_v2) {
+			err = -ENOMEM;
+			goto exit;
+		}
+
+		reinit_completion(&vif->mgmt_tx);
+		clear_bit(BRCMF_MGMT_TX_ACK, &vif->mgmt_tx_status);
+		clear_bit(BRCMF_MGMT_TX_NOACK, &vif->mgmt_tx_status);
+		clear_bit(BRCMF_MGMT_TX_OFF_CHAN_COMPLETED,
+			  &vif->mgmt_tx_status);
+
+		/* set actframe iovar with af_params_v2 */
+		af_params_v2->band = nl80211_band_to_fwil(peer_listen_chan->band);
+		af_params_v2->channel = af_params->channel;
+		af_params_v2->dwell_time = af_params->dwell_time;
+		memcpy(af_params_v2->bssid, af_params->bssid, ETH_ALEN);
+		memcpy(&af_params_v2->action_frame, &af_params->action_frame,
+		       sizeof(af_params_v2->action_frame));
+
+		set_bit(BRCMF_MGMT_TX_SEND_FRAME, &vif->mgmt_tx_status);
+
+		err = brcmf_fil_bsscfg_data_set(ifp, "actframe", af_params_v2,
+						sizeof(*af_params_v2));
+		kfree(af_params_v2);
+	} else {
+		set_bit(BRCMF_MGMT_TX_SEND_FRAME, &vif->mgmt_tx_status);
+		/* set actframe iovar with af_params */
+		err = brcmf_fil_bsscfg_data_set(ifp, "actframe", af_params,
+						sizeof(*af_params));
+	}
+
+	timeout = wait_for_completion_timeout(&vif->mgmt_tx,
+					      MGMT_AUTH_FRAME_WAIT_TIME);
+	if (test_bit(BRCMF_MGMT_TX_ACK, &vif->mgmt_tx_status)) {
+		brcmf_dbg(TRACE, "TX Action frame operation is success\n");
+		ack = true;
+	} else {
+		bphy_err(drvr,
+			 "TX Action frame operation is failed: status=%ld)\n",
+			 vif->mgmt_tx_status);
+	}
+
+exit:
+	if (err)
+		bphy_err(drvr, " sending action frame has failed\n");
+
+	return ack;
+}
+
+/**
+ * brcmf_ieee80211_is_gas_action() - true if gas action type frame.
+ *
+ * @frame: action frame data.
+ * @frame_len: length of action frame data.
+ *
+ * Determine if action frame is gas action type
+ */
+bool brcmf_ieee80211_is_gas_action(void *frame, u32 frame_len)
+{
+	struct brcmf_sd_gas_pub_act_frame *sd_act_frm;
+
+	if (!frame)
+		return false;
+
+	sd_act_frm = (struct brcmf_sd_gas_pub_act_frame *)frame;
+	if (frame_len < sizeof(*sd_act_frm))
+		return false;
+
+	if (sd_act_frm->category != IEEE80211_PUB_AF_CATEGORY)
+		return false;
+
+	if (sd_act_frm->action == IEEE80211_SD_ACTION_ID_GAS_IREQ ||
+	    sd_act_frm->action == IEEE80211_SD_ACTION_ID_GAS_IRESP ||
+	    sd_act_frm->action == IEEE80211_SD_ACTION_ID_GAS_CREQ ||
+	    sd_act_frm->action == IEEE80211_SD_ACTION_ID_GAS_CRESP)
+		return true;
+
+	return false;
+}
 
 int
 brcmf_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
@@ -6651,6 +6781,7 @@ brcmf_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	size_t len = params->len;
 	const struct ieee80211_mgmt *mgmt;
 	struct brcmf_cfg80211_vif *vif;
+	enum nl80211_iftype iftype;
 	s32 err = 0;
 	s32 ie_offset;
 	s32 ie_len;
@@ -6740,10 +6871,21 @@ brcmf_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			  *cookie, le16_to_cpu(action_frame->len),
 			  le32_to_cpu(af_params->channel));
 
-		ack = brcmf_p2p_send_action_frame(vif->ifp, af_params, chan);
-
-		cfg80211_mgmt_tx_status(wdev, *cookie, buf, len, ack,
-					GFP_KERNEL);
+		iftype = vif->wdev.iftype;
+		if (iftype == NL80211_IFTYPE_P2P_GO ||
+		    iftype == NL80211_IFTYPE_P2P_CLIENT ||
+		    iftype == NL80211_IFTYPE_P2P_DEVICE) {
+			ack = brcmf_p2p_send_action_frame(vif->ifp, af_params, chan);
+			cfg80211_mgmt_tx_status(wdev, *cookie, buf, len, ack,
+						GFP_KERNEL);
+		} else {
+			ack = brcmf_send_action_frame(cfg,
+						      cfg_to_ndev(cfg),
+						      af_params, vif, chan);
+			cfg80211_mgmt_tx_status(wdev, *cookie,
+						buf, len, ack,
+						GFP_KERNEL);
+		}
 free:
 		kfree(af_params);
 	} else {
@@ -8517,6 +8659,48 @@ brcmf_notify_assoc_resp_ie(struct brcmf_if *ifp,
 	return 0;
 }
 
+/**
+ * brcmf_notify_action_tx_complete() - transmit action frame complete
+ *
+ * @ifp: interfac control.
+ * @e: event message. Not used, to make it usable for fweh event dispatcher.
+ * @data: not used.
+ *
+ */
+int brcmf_notify_action_tx_complete(struct brcmf_if *ifp,
+				    const struct brcmf_event_msg *e,
+				    void *data)
+{
+	struct brcmf_cfg80211_vif *vif = ifp->vif;
+	enum nl80211_iftype iftype = vif->wdev.iftype;
+
+	brcmf_dbg(INFO, "Enter: event %s, status=%d\n",
+		  e->event_code == BRCMF_E_ACTION_FRAME_OFF_CHAN_COMPLETE ?
+		  "ACTION_FRAME_OFF_CHAN_COMPLETE" : "ACTION_FRAME_COMPLETE",
+		  e->status);
+
+	if (iftype == NL80211_IFTYPE_P2P_CLIENT ||
+	    iftype == NL80211_IFTYPE_P2P_GO ||
+	    iftype == NL80211_IFTYPE_P2P_DEVICE) {
+		brcmf_p2p_notify_action_tx_complete(ifp, e, data);
+	} else {
+		if (!test_bit(BRCMF_MGMT_TX_SEND_FRAME, &vif->mgmt_tx_status))
+			return 0;
+
+		if (e->event_code == BRCMF_E_ACTION_FRAME_COMPLETE) {
+			if (e->status == BRCMF_E_STATUS_SUCCESS)
+				set_bit(BRCMF_MGMT_TX_ACK, &vif->mgmt_tx_status);
+			else
+				set_bit(BRCMF_MGMT_TX_NOACK, &vif->mgmt_tx_status);
+		} else {
+			set_bit(BRCMF_MGMT_TX_OFF_CHAN_COMPLETED, &vif->mgmt_tx_status);
+		}
+
+		complete(&vif->mgmt_tx);
+	}
+	return 0;
+}
+
 static void brcmf_register_event_handlers(struct brcmf_cfg80211_info *cfg)
 {
 	struct brcmf_if *ifp = netdev_priv(cfg_to_ndev(cfg));
@@ -8560,9 +8744,9 @@ static void brcmf_register_event_handlers(struct brcmf_cfg80211_info *cfg)
 	brcmf_fweh_register(cfg->pub, BRCMF_E_ACTION_FRAME_RX,
 			    brcmf_p2p_notify_action_frame_rx);
 	brcmf_fweh_register(cfg->pub, BRCMF_E_ACTION_FRAME_COMPLETE,
-			    brcmf_p2p_notify_action_tx_complete);
+			    brcmf_notify_action_tx_complete);
 	brcmf_fweh_register(cfg->pub, BRCMF_E_ACTION_FRAME_OFF_CHAN_COMPLETE,
-			    brcmf_p2p_notify_action_tx_complete);
+			    brcmf_notify_action_tx_complete);
 	brcmf_fweh_register(cfg->pub, BRCMF_E_PSK_SUP,
 			    brcmf_notify_connect_status);	
 	if (rssi_event.version == WL_RSSI_EVENT_IFX_VERSION)

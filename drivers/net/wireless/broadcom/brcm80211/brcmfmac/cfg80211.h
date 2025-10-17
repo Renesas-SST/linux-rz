@@ -116,6 +116,64 @@
 #define WL_RSPEC_HE_GI_SHIFT	     10
 #define HE_GI_TO_RSPEC(gi)	     (((gi) << WL_RSPEC_HE_GI_SHIFT) & WL_RSPEC_HE_GI_MASK)
 
+#define IEEE80211_PUB_AF_CATEGORY	0x04
+#define IEEE80211_PUB_AF_ACTION		0x09
+/* Action Frame Constants */
+#define DOT11_ACTION_HDR_LEN	2	/* action frame category + action */
+#define DOT11_ACTION_CAT_OFF	0	/* category offset */
+#define DOT11_ACTION_ACT_OFF	1	/* action offset */
+
+/* GAS ACTION IDs*/
+#define IEEE80211_SD_ACTION_ID_GAS_IREQ		0x0a	/* GAS Initial Request AF */
+#define IEEE80211_SD_ACTION_ID_GAS_IRESP	0x0b	/* GAS Initial Response AF */
+#define IEEE80211_SD_ACTION_ID_GAS_CREQ		0x0c	/* GAS Comeback Request AF */
+#define IEEE80211_SD_ACTION_ID_GAS_CRESP	0x0d	/* GAS Comeback Response AF */
+
+#define COMMON_ACTION_FRM_DWELL_TIME		200
+#define COMMON_ACTION_FRM_MIN_DWELL_TIME	100
+#define COMMON_ACTION_FRM_MED_DWELL_TIME	400
+#define COMMON_ACTION_FRM_LONG_DWELL_TIME	1000
+#define COMMON_ACTION_FRM_TX_MAX_RETRY		5
+#define COMMON_ACTION_FRM_MAX_WAIT_TIME		msecs_to_jiffies(2000)
+
+#define MGMT_AUTH_FRAME_DWELL_TIME	4000
+#define MGMT_AUTH_FRAME_WAIT_TIME	(MGMT_AUTH_FRAME_DWELL_TIME + 100)
+/**
+ * struct brcmf_p2psd_gas_pub_act_frame - Wi-Fi GAS Public Action Frame
+ *
+ * @category: 0x04 Public Action Frame
+ * @action: 0x6c Advertisement Protocol
+ * @dialog_token: nonzero, identifies req/rsp transaction
+ * @query_data: Query Data. SD gas ireq SD gas iresp
+ */
+struct brcmf_sd_gas_pub_act_frame {
+	u8	category;
+	u8	action;
+	u8	dialog_token;
+	u8	query_data[];
+};
+
+/**
+ * struct brcmf_p2p_pub_act_frame - WiFi P2P Public Action Frame
+ *
+ * @category: P2P_PUB_AF_CATEGORY
+ * @action: P2P_PUB_AF_ACTION
+ * @oui: P2P_OUI
+ * @oui_type: OUI type - P2P_VER
+ * @subtype: OUI subtype - P2P_TYPE_*
+ * @dialog_token: nonzero, identifies req/rsp transaction
+ * @elts: Variable length information elements.
+ */
+struct brcmf_ieee80211_pub_act_frame {
+	u8	category;
+	u8	action;
+	u8	oui[3];
+	u8	oui_type;
+	u8	subtype;
+	u8	dialog_token;
+	u8	elts[];
+};
+
 /**
  * enum brcmf_scan_status - scan engine status
  *
@@ -579,4 +637,5 @@ void ifx_vndr_cmdstr_hashtbl_deinit(void);
 s32 brcmf_cfg80211_inform_single_bss(struct brcmf_cfg80211_info *cfg,
 				   struct brcmf_bss_info_le *bi);
 void brcmf_cfg80211_delay(u32 ms);
+bool brcmf_ieee80211_is_gas_action(void *frame, u32 frame_len);
 #endif /* BRCMFMAC_CFG80211_H */

@@ -46,29 +46,11 @@
 #define BRCMF_SCB_TIMEOUT_VALUE	20
 
 #define P2P_VER			9	/* P2P version: 9=WiFi P2P v1.0 */
-#define P2P_PUB_AF_CATEGORY	0x04
-#define P2P_PUB_AF_ACTION	0x09
+#define P2P_PUB_AF_CATEGORY	IEEE80211_PUB_AF_CATEGORY
+#define P2P_PUB_AF_ACTION	IEEE80211_PUB_AF_ACTION
 #define P2P_AF_CATEGORY		0x7f
 #define P2P_OUI			"\x50\x6F\x9A"	/* P2P OUI */
 #define P2P_OUI_LEN		3		/* P2P OUI length */
-
-/* Action Frame Constants */
-#define DOT11_ACTION_HDR_LEN	2	/* action frame category + action */
-#define DOT11_ACTION_CAT_OFF	0	/* category offset */
-#define DOT11_ACTION_ACT_OFF	1	/* action offset */
-
-#define P2P_AF_DWELL_TIME		200
-#define P2P_AF_MIN_DWELL_TIME		100
-#define P2P_AF_MED_DWELL_TIME		400
-#define P2P_AF_LONG_DWELL_TIME		1000
-#define P2P_AF_TX_MAX_RETRY		5
-#define P2P_AF_MAX_WAIT_TIME		msecs_to_jiffies(2000)
-#define P2P_INVALID_CHANNEL		-1
-#define P2P_INVALID_CHANSPEC		0
-#define P2P_CHANNEL_SYNC_RETRY		5
-#define P2P_AF_FRM_SCAN_MAX_WAIT	msecs_to_jiffies(450)
-#define P2P_DEFAULT_SLEEP_TIME_VSDB	200
-#define P2P_AF_RETRY_DELAY_TIME		40
 
 /* WiFi P2P Public Action Frame OUI Subtypes */
 #define P2P_PAF_GON_REQ		0	/* Group Owner Negotiation Req */
@@ -87,13 +69,6 @@
 #define P2P_AF_PRESENCE_REQ		1	/* P2P Presence Request */
 #define P2P_AF_PRESENCE_RSP		2	/* P2P Presence Response */
 #define P2P_AF_GO_DISC_REQ		3	/* GO Discoverability Request */
-
-/* P2P Service Discovery related */
-#define P2PSD_ACTION_CATEGORY		0x04	/* Public action frame */
-#define P2PSD_ACTION_ID_GAS_IREQ	0x0a	/* GAS Initial Request AF */
-#define P2PSD_ACTION_ID_GAS_IRESP	0x0b	/* GAS Initial Response AF */
-#define P2PSD_ACTION_ID_GAS_CREQ	0x0c	/* GAS Comeback Request AF */
-#define P2PSD_ACTION_ID_GAS_CRESP	0x0d	/* GAS Comeback Response AF */
 
 #define BRCMF_P2P_DISABLE_TIMEOUT	msecs_to_jiffies(500)
 
@@ -142,26 +117,7 @@ struct brcmf_p2p_scan_le {
 	};
 };
 
-/**
- * struct brcmf_p2p_pub_act_frame - WiFi P2P Public Action Frame
- *
- * @category: P2P_PUB_AF_CATEGORY
- * @action: P2P_PUB_AF_ACTION
- * @oui: P2P_OUI
- * @oui_type: OUI type - P2P_VER
- * @subtype: OUI subtype - P2P_TYPE_*
- * @dialog_token: nonzero, identifies req/rsp transaction
- * @elts: Variable length information elements.
- */
-struct brcmf_p2p_pub_act_frame {
-	u8	category;
-	u8	action;
-	u8	oui[3];
-	u8	oui_type;
-	u8	subtype;
-	u8	dialog_token;
-	u8	elts[];
-};
+typedef struct brcmf_ieee80211_pub_act_frame brcmf_p2p_pub_act_frame;
 
 /**
  * struct brcmf_p2p_action_frame - WiFi P2P Action Frame
@@ -190,12 +146,7 @@ struct brcmf_p2p_action_frame {
  * @dialog_token: nonzero, identifies req/rsp transaction
  * @query_data: Query Data. SD gas ireq SD gas iresp
  */
-struct brcmf_p2psd_gas_pub_act_frame {
-	u8	category;
-	u8	action;
-	u8	dialog_token;
-	u8	query_data[];
-};
+typedef struct brcmf_sd_gas_pub_act_frame brcmf_p2psd_gas_pub_act_frame;
 
 /**
  * struct brcmf_config_af_params - Action Frame Parameters for tx.
@@ -221,12 +172,12 @@ struct brcmf_config_af_params {
  */
 static bool brcmf_p2p_is_pub_action(void *frame, u32 frame_len)
 {
-	struct brcmf_p2p_pub_act_frame *pact_frm;
+	brcmf_p2p_pub_act_frame *pact_frm;
 
 	if (frame == NULL)
 		return false;
 
-	pact_frm = (struct brcmf_p2p_pub_act_frame *)frame;
+	pact_frm = (brcmf_p2p_pub_act_frame *)frame;
 	if (frame_len < sizeof(*pact_frm))
 		return false;
 
@@ -249,13 +200,13 @@ static bool brcmf_p2p_is_pub_action(void *frame, u32 frame_len)
  */
 static bool brcmf_p2p_is_dpp_pub_action(void *frame, u32 frame_len)
 {
-	struct brcmf_p2p_pub_act_frame *pact_frm;
+	brcmf_p2p_pub_act_frame *pact_frm;
 
 	if (!frame)
 		return false;
 
-	pact_frm = (struct brcmf_p2p_pub_act_frame *)frame;
-	if (frame_len < sizeof(struct brcmf_p2p_pub_act_frame) - 1)
+	pact_frm = (brcmf_p2p_pub_act_frame *)frame;
+	if (frame_len < sizeof(brcmf_p2p_pub_act_frame) - 1)
 		return false;
 
 	if (pact_frm->category == WLAN_CATEGORY_PUBLIC &&
@@ -304,25 +255,7 @@ static bool brcmf_p2p_is_p2p_action(void *frame, u32 frame_len)
  */
 static bool brcmf_p2p_is_gas_action(void *frame, u32 frame_len)
 {
-	struct brcmf_p2psd_gas_pub_act_frame *sd_act_frm;
-
-	if (frame == NULL)
-		return false;
-
-	sd_act_frm = (struct brcmf_p2psd_gas_pub_act_frame *)frame;
-	if (frame_len < sizeof(*sd_act_frm))
-		return false;
-
-	if (sd_act_frm->category != P2PSD_ACTION_CATEGORY)
-		return false;
-
-	if (sd_act_frm->action == P2PSD_ACTION_ID_GAS_IREQ ||
-	    sd_act_frm->action == P2PSD_ACTION_ID_GAS_IRESP ||
-	    sd_act_frm->action == P2PSD_ACTION_ID_GAS_CREQ ||
-	    sd_act_frm->action == P2PSD_ACTION_ID_GAS_CRESP)
-		return true;
-
-	return false;
+	return brcmf_ieee80211_is_gas_action(frame, frame_len);
 }
 
 /**
@@ -339,15 +272,15 @@ static bool brcmf_p2p_is_gas_action(void *frame, u32 frame_len)
 
 static void brcmf_p2p_print_actframe(bool tx, void *frame, u32 frame_len)
 {
-	struct brcmf_p2p_pub_act_frame *pact_frm;
+	brcmf_p2p_pub_act_frame *pact_frm;
 	struct brcmf_p2p_action_frame *act_frm;
-	struct brcmf_p2psd_gas_pub_act_frame *sd_act_frm;
+	brcmf_p2psd_gas_pub_act_frame *sd_act_frm;
 
 	if (!frame || frame_len <= 2)
 		return;
 
 	if (brcmf_p2p_is_pub_action(frame, frame_len)) {
-		pact_frm = (struct brcmf_p2p_pub_act_frame *)frame;
+		pact_frm = (brcmf_p2p_pub_act_frame *)frame;
 		switch (pact_frm->subtype) {
 		case P2P_PAF_GON_REQ:
 			brcmf_dbg(TRACE, "%s P2P Group Owner Negotiation Req Frame\n",
@@ -415,7 +348,7 @@ static void brcmf_p2p_print_actframe(bool tx, void *frame, u32 frame_len)
 		}
 
 	} else if (brcmf_p2p_is_gas_action(frame, frame_len)) {
-		sd_act_frm = (struct brcmf_p2psd_gas_pub_act_frame *)frame;
+		sd_act_frm = (brcmf_p2psd_gas_pub_act_frame *)frame;
 		switch (sd_act_frm->action) {
 		case P2PSD_ACTION_ID_GAS_IREQ:
 			brcmf_dbg(TRACE, "%s P2P GAS Initial Request\n",
@@ -1439,8 +1372,8 @@ int brcmf_p2p_notify_action_frame_rx(struct brcmf_if *ifp,
 	u32 mgmt_frame_len = e->datalen - sizeof(struct brcmf_rx_mgmt_data);
 	struct brcmf_rx_mgmt_data *rxframe = (struct brcmf_rx_mgmt_data *)data;
 	u8 *frame = (u8 *)(rxframe + 1);
-	struct brcmf_p2p_pub_act_frame *act_frm;
-	struct brcmf_p2psd_gas_pub_act_frame *sd_act_frm;
+	brcmf_p2p_pub_act_frame *act_frm;
+	brcmf_p2psd_gas_pub_act_frame *sd_act_frm;
 	struct brcmu_chan ch;
 	struct ieee80211_mgmt *mgmt_frame;
 	s32 freq;
@@ -1464,7 +1397,7 @@ int brcmf_p2p_notify_action_frame_rx(struct brcmf_if *ifp,
 
 	action = P2P_PAF_SUBTYPE_INVALID;
 	if (brcmf_p2p_is_pub_action(frame, mgmt_frame_len)) {
-		act_frm = (struct brcmf_p2p_pub_act_frame *)frame;
+		act_frm = (brcmf_p2p_pub_act_frame *)frame;
 		action = act_frm->subtype;
 		if ((action == P2P_PAF_GON_REQ) &&
 		    (brcmf_p2p_gon_req_collision(p2p, (u8 *)e->addr))) {
@@ -1487,7 +1420,7 @@ int brcmf_p2p_notify_action_frame_rx(struct brcmf_if *ifp,
 			clear_bit(BRCMF_P2P_STATUS_GO_NEG_PHASE, &p2p->status);
 		}
 	} else if (brcmf_p2p_is_gas_action(frame, mgmt_frame_len)) {
-		sd_act_frm = (struct brcmf_p2psd_gas_pub_act_frame *)frame;
+		sd_act_frm = (brcmf_p2psd_gas_pub_act_frame *)frame;
 		action = sd_act_frm->action;
 	}
 
@@ -1677,12 +1610,12 @@ static s32 brcmf_p2p_pub_af_tx(struct brcmf_cfg80211_info *cfg,
 	struct brcmf_p2p_info *p2p = &cfg->p2p;
 	struct brcmf_pub *drvr = cfg->pub;
 	struct brcmf_fil_action_frame_le *action_frame;
-	struct brcmf_p2p_pub_act_frame *act_frm;
+	brcmf_p2p_pub_act_frame *act_frm;
 	s32 err = 0;
 	u16 ie_len;
 
 	action_frame = &af_params->action_frame;
-	act_frm = (struct brcmf_p2p_pub_act_frame *)(action_frame->data);
+	act_frm = (brcmf_p2p_pub_act_frame *)(action_frame->data);
 
 	config_af_params->extra_listen = true;
 
@@ -1736,7 +1669,7 @@ static s32 brcmf_p2p_pub_af_tx(struct brcmf_cfg80211_info *cfg,
 		break;
 	case P2P_PAF_PROVDIS_REQ:
 		ie_len = le16_to_cpu(action_frame->len) -
-			 offsetof(struct brcmf_p2p_pub_act_frame, elts);
+			 offsetof(brcmf_p2p_pub_act_frame, elts);
 		if (cfg80211_get_p2p_attr(&act_frm->elts[0], ie_len,
 					  IEEE80211_P2P_ATTR_GROUP_ID,
 					  NULL, 0) < 0)
