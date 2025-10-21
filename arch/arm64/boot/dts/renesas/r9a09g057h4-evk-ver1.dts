@@ -47,20 +47,27 @@
  * Please change the jumper setting corresponding to below Macros:
  *
  * SEL_CAN01_HEADER:
- *      1: CAN0/1       0: External Header Pin
+ *		1 - CAN0/1
+ *		0 - External Header Pin
  * RSCI5_UART_I2C_SEL:
- *      0 - SCI5 (default)      1 - RSCI_I2C5
+ *		0 - SCI5 (default)
+ *		1 - RSCI_I2C5
  * RSPI2_RSCI9_SEL:
- *      0 - RSPI2 (default)     1 - RSCI9
+ *		0 - RSPI2 (default)
+ *		1 - RSCI9
  * RSPI9_SEL:
- *      0 - RSCI9_UART (default)
- *      1 - RSCI9_I2C
- *      2 - RSCI9_SPI
+ *		0 - RSCI9_UART (default)
+ *		1 - RSCI9_I2C
+ *		2 - RSCI9_SPI
  * SEL_PCIE_MODE:
- * - 0: Root Complex (default)
- * - 1: Endpoint
+ *		0 - Root Complex (default)
+ *		1 - Endpoint
+ * I3C_SEL:
+ *		0 - Use I2C2 (da7212) (default)
+ *		1 - Use I3C
  */
 
+#define I3C_SEL                 0
 #define SEL_CAN01_HEADER        1
 #define RSCI5_UART_I2C_SEL      0
 #define RSPI2_RSCI9_SEL         0
@@ -91,7 +98,7 @@
 		mmc2 = &sdhi2;
 		ethernet0 = &eth0;
 		ethernet1 = &eth1;
-        };
+	};
 
 	chosen {
 		bootargs = "ignore_loglevel";
@@ -485,8 +492,10 @@
 	};
 
 	i2c2_pins: i2c2 {
+#if (!I3C_SEL)
 		pinmux = <RZV2H_PORT_PINMUX(2, 0, 4)>, /* I2C2_SDA */
 			 <RZV2H_PORT_PINMUX(2, 1, 4)>; /* I2C2_SCL */
+#endif
 	};
 
 	i2c3_pins: i2c3 {
@@ -560,12 +569,12 @@
 		pinmux = <RZV2H_PORT_PINMUX(7, 0, 9)>, /* Channel A */
 			 <RZV2H_PORT_PINMUX(7, 1, 9)>; /* Channel B */
 	};
-
 	i3c_pins: i3c {
+#if (I3C_SEL)
 		pinmux = <RZV2H_PORT_PINMUX(2, 0, 1)>, /* I3C_SDA */
 			 <RZV2H_PORT_PINMUX(2, 1, 1)>; /* I3C_SCL */
+#endif
 	};
-
 	sound_pins_hdmi: hdmi-sound {
 		pinmux = <RZV2H_PORT_PINMUX(4, 0, 7)>, /* SSI0_SCK */
 			 <RZV2H_PORT_PINMUX(4, 1, 7)>, /* SSI0_WS */
@@ -1232,7 +1241,9 @@
 	pinctrl-names = "default";
 
 	/* Enable when there is an I3C external device defined here */
-	/* status = "okay"; */
+#if (I3C_SEL)
+	status = "okay";
+#endif
 };
 
 #if (!SEL_PCIE_MODE)
