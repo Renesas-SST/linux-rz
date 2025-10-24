@@ -123,25 +123,26 @@ dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044c2-smarc-cru-csi-ov5645.dtbo
 r9a07g044c2-smarc-cru-csi-ov5645-dtbs := r9a07g044c2-smarc.dtb r9a07g044c2-smarc-cru-csi-ov5645.dtbo
 dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044c2-smarc-cru-csi-ov5645.dtb
 
-dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc.dtb
-dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc-cru-csi-ov5645.dtbo
-r9a07g044l2-smarc-cru-csi-ov5645-dtbs := r9a07g044l2-smarc.dtb r9a07g044l2-smarc-cru-csi-ov5645.dtbo
-dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc-cru-csi-ov5645.dtb
+DTC_FLAGS_rzg2l-evk += -@
+dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-evk.dtb
 
 DTC_FLAGS_rzg2l-sbc += -@
 dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-sbc.dtb
-subdir-$(CONFIG_ARCH_R9A07G044) += overlays
 
-dtb-$(CONFIG_ARCH_R9A07G054) += r9a07g054l2-smarc.dtb
-dtb-$(CONFIG_ARCH_R9A07G054) += r9a07g054l2-smarc-cru-csi-ov5645.dtbo
-r9a07g054l2-smarc-cru-csi-ov5645-dtbs := r9a07g054l2-smarc.dtb r9a07g054l2-smarc-cru-csi-ov5645.dtbo
-dtb-$(CONFIG_ARCH_R9A07G054) += r9a07g054l2-smarc-cru-csi-ov5645.dtb
+DTC_FLAGS_rzv2l-evk += -@
+dtb-$(CONFIG_ARCH_R9A07G054) += rzv2l-evk.dtb
 
 dtb-$(CONFIG_ARCH_R9A08G045) += r9a08g045s33-smarc.dtb
 
 dtb-$(CONFIG_ARCH_R9A09G011) += r9a09g011-v2mevk2.dtb
 
-dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h4-evk-ver1.dtb r9a09g057h4-rdk-ver1.dtb
+DTC_FLAGS_rzv2h-evk-ver1 += -@
+dtb-$(CONFIG_ARCH_R9A09G057) += rzv2h-evk-ver1.dtb
+
+DTC_FLAGS_rzv2h-rdk-ver1 += -@
+dtb-$(CONFIG_ARCH_R9A09G057) += rzv2h-rdk-ver1.dtb
+
+subdir-y += overlays
 
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += draak-ebisu-panel-aa104xd12.dtbo
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += salvator-panel-aa104xd12.dtbo

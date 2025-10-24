@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright (C) 2025 Renesas Electronics Corporation
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
+
+&pinctrl {
+    master_sci0_pins: master_sci0 {
+        pinmux = <RZV2H_PORT_PINMUX(5, 1, 1)>, 	/* RXD0_MISO0_SCL0 */
+             <RZV2H_PORT_PINMUX(5, 0, 1)>, 		/* TXD0_MOSI0_SDA0 */
+             <RZV2H_PORT_PINMUX(5, 2, 2)>; 		/* SCK0 */
+    };
+
+    slave_sci0_pins: slave_sci0 {
+        pinmux = <RZV2H_PORT_PINMUX(5, 1, 1)>, 	/* RXD0_MISO0_SCL0 */
+             <RZV2H_PORT_PINMUX(5, 0, 1)>, 		/* TXD0_MOSI0_SDA0 */
+             <RZV2H_PORT_PINMUX(5, 2, 2)>, 		/* SCK0 */
+             <RZV2H_PORT_PINMUX(5, 3, 2)>; 		/* SS0_CTS0N_RTS0N */
+    };
+};
+
+&rsci_spi0 {
+    pinctrl-0 = <&master_sci0_pins>;
+    pinctrl-1 = <&slave_sci0_pins>;
+    pinctrl-names = "master", "slave";
+    status = "okay";
+};
