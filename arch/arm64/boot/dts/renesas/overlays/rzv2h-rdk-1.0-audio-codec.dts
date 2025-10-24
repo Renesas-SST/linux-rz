@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright (C) 2025 Renesas Electronics Corporation
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
+
+&pinctrl {
+    sound_pins: sound {
+        pinmux = <RZV2H_PORT_PINMUX(9, 5, 7)>, /* SSI0_SCK */
+            <RZV2H_PORT_PINMUX(9, 6, 7)>,     /* SSI0_WS */
+            <RZV2H_PORT_PINMUX(9, 7, 7)>;     /* SSI0_SDATA */
+    };
+};
+
+&rcar_sound {
+    pinctrl-0 = <&sound_pins>;
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        rsnd_port0: port@0 {
+            rsnd_endpoint0: endpoint {
+                remote-endpoint = <&da7219_endpoint>;
+
+                mclk-fs = <256>;
+            };
+        };
+    };
+};
+
+&rsci_i2c7 {
+    da7219: da7219@1a {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port {
+            da7219_endpoint: endpoint {
+                remote-endpoint = <&rsnd_endpoint0>;
+            };
+        };
+    };
+};

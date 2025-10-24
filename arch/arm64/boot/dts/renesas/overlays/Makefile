@@ -3,8 +3,19 @@
 # required for overlay support
 DTC_FLAGS += -@
 
-dtb-y += rzg2l-sbc-ext-i2c.dtbo
-dtb-y += rzg2l-sbc-ext-spi.dtbo
-dtb-y += rzg2l-sbc-can.dtbo
-dtb-y += rzg2l-sbc-ov5640.dtbo
-dtb-y += rzg2l-sbc-dsi.dtbo
+# RZ/G2L SBC overlays
+dtb-y += rzg2l-sbc-1.0-ext-i2c.dtbo
+dtb-y += rzg2l-sbc-1.0-ext-spi.dtbo
+dtb-y += rzg2l-sbc-1.0-can.dtbo
+dtb-y += rzg2l-sbc-1.0-ov5640.dtbo
+dtb-y += rzg2l-sbc-1.0-dsi.dtbo
+
+# CRU CSI OV5645 overlays
+dtb-y += rzg2l-evk-1.0-cru-csi-ov5645.dtbo
+dtb-y += rzv2l-evk-1.0-cru-csi-ov5645.dtbo
+
+# RZ/V2H RDK overlays
+dtb-y += rzv2h-rdk-1.0-can.dtbo
+dtb-y += rzv2h-rdk-1.0-ext-spi.dtbo
+dtb-y += rzv2h-rdk-1.0-audio-codec.dtbo
+dtb-y += rzv2h-rdk-1.0-audio-hdmi.dtbo

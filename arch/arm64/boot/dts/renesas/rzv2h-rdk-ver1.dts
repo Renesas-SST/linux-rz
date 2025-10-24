@@ -16,17 +16,14 @@
  *
  * Configure the following macros in the device tree to select the desired functionality:
  *
- * RSCI0_UART_I2C_SEL:
- *   0 - GPIO (default)          1 - RSCI_SPI0
  * RSCI2_UART_I2C_SEL:
- *   0 - RI2C4 (default)         1 - RSCI_I2C2
+ *   0 - RI2C4 (default)         1 - RSCI_I2C4
  * RSCI6_UART_I2C_SEL:
  *   0 - RI2C6 (default)         1 - RSCI_I2C6
  * PCIE_MODE_SEL:
  *   0 - Root Complex (default)  1 - Endpoint
  */
 
-#define RSCI0_UART_I2C_SEL      0
 #define RSCI2_UART_I2C_SEL      0
 #define RSCI6_UART_I2C_SEL      1
 #define PCIE_MODE_SEL           0
@@ -243,45 +240,6 @@
 };
 
 &pinctrl {
-#if (RSCI0_UART_I2C_SEL)
-    master_sci0_pins: master_sci0 {
-        pinmux = <RZV2H_PORT_PINMUX(5, 1, 1)>, 	/* RXD0_MISO0_SCL0 */
-             <RZV2H_PORT_PINMUX(5, 0, 1)>, 		/* TXD0_MOSI0_SDA0 */
-             <RZV2H_PORT_PINMUX(5, 2, 2)>; 		/* SCK0 */
-    };
-
-    slave_sci0_pins: slave_sci0 {
-        pinmux = <RZV2H_PORT_PINMUX(5, 1, 1)>, 	/* RXD0_MISO0_SCL0 */
-             <RZV2H_PORT_PINMUX(5, 0, 1)>, 		/* TXD0_MOSI0_SDA0 */
-             <RZV2H_PORT_PINMUX(5, 2, 2)>, 		/* SCK0 */
-             <RZV2H_PORT_PINMUX(5, 3, 2)>; 		/* SS0_CTS0N_RTS0N */
-    };
-#endif
-
-    can0_pins: can0 {
-        pinmux = <RZV2H_PORT_PINMUX(8, 0, 5)>, 	/* CTX0 */
-             <RZV2H_PORT_PINMUX(8, 1, 5)>; 		/* CRX0 */
-    };
-
-    can0-stb-hog {
-        gpio-hog;
-        gpios = <RZV2H_GPIO(A, 2) GPIO_ACTIVE_HIGH>;
-        output-low;
-        line-name = "can0_stb";
-    };
-
-    can3_pins: can3 {
-        pinmux = <RZV2H_PORT_PINMUX(8, 6, 5)>, 	/* CTX3 */
-             <RZV2H_PORT_PINMUX(8, 7, 5)>; 		/* CRX3 */
-    };
-
-    can3-stb-hog {
-        gpio-hog;
-        gpios = <RZV2H_GPIO(A, 3) GPIO_ACTIVE_HIGH>;
-        output-low;
-        line-name = "can3_stb";
-    };
-
     scif_pins: scif {
         pins =  "SCIF_RXD", "SCIF_TXD";
         renesas,output-impedance = <1>;
@@ -369,11 +327,6 @@
              <RZV2H_PORT_PINMUX(2, 1, 1)>; 		/* I3C_SCL */
     };
 
-    sound_pins_hdmi: hdmi-sound {
-        pinmux = <RZV2H_PORT_PINMUX(4, 0, 7)>, /* SSI0_SCK */
-             <RZV2H_PORT_PINMUX(4, 1, 7)>,     /* SSI0_WS */
-             <RZV2H_PORT_PINMUX(4, 2, 7)>;     /* SSI0_SDATA */
-    };
 };
 
 &qextal_clk {
@@ -392,32 +345,6 @@
     pinctrl-names = "default";
     status = "okay";
 };
-
-&canfd {
-    pinctrl-0 = <&can0_pins &can3_pins>;
-    pinctrl-names = "default";
-    status = "okay";
-
-    channel0 {
-        status = "okay";
-    };
-
-    channel3 {
-        status = "okay";
-    };
-};
-
-#if (RSCI0_UART_I2C_SEL)
-&rsci_spi0 {
-    pinctrl-0 = <&master_sci0_pins>;
-    pinctrl-1 = <&slave_sci0_pins>;
-    pinctrl-names = "master", "slave";
-    status = "okay";
-
-    /* Using cs-gpios property when is master mode */
-    cs-gpios = <&pinctrl RZV2H_GPIO(5, 3) GPIO_ACTIVE_HIGH>;
-};
-#endif
 
 &sdhi0 {
     pinctrl-0 = <&sdhi0_pins>;
@@ -467,6 +394,8 @@
     pinctrl-0 = <&rsci_i2c4_pins>;
 #endif
     pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
 
     status = "okay";
 
@@ -499,6 +428,8 @@
     pinctrl-0 = <&rsci_i2c6_pins>;
 #endif
     pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
 
     status = "okay";	
     ov5645_csi21: ov5645_csi21@3c {
@@ -524,7 +455,42 @@
 &rsci_i2c7 {
     pinctrl-0 = <&rsci_i2c7_pins>;
     pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
     status = "okay";
+
+    da7219: da7219@1a {
+        compatible = "dlg,da7219";
+
+        #sound-dai-cells = <0>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        reg = <0x1a>;
+
+        dlg,micbias-lvl = <2600>;
+        dlg,mic-amp-in-sel = "diff";
+
+        status = "okay";
+
+        interrupt-parent = <&pinctrl>;
+        interrupts = <RZV2H_GPIO(5, 1) IRQ_TYPE_LEVEL_LOW>;
+
+        da7219_aad {
+            dlg,adc-1bit-rpt = <1>;
+            dlg,btn-avg = <4>;
+            dlg,btn-cfg = <50>;
+            dlg,mic-det-thr = <500>;
+            dlg,jack-ins-deb = <20>;
+            dlg,jack-det-rate = "32_64";
+            dlg,jack-rem-deb = <1>;
+
+            dlg,a-d-btn-thr = <0xa>;
+            dlg,d-b-btn-thr = <0x16>;
+            dlg,b-c-btn-thr = <0x21>;
+            dlg,c-mic-btn-thr = <0x3E>;
+        };
+    };
 };
 
 &spi0 {
@@ -679,13 +645,6 @@
                     remote-endpoint = <&hdmi_con_out>;
                 };
             };
-
-            port@2 {
-                reg = <2>;
-                dsi_hdmi0_snd_in: endpoint {
-                    remote-endpoint = <&rsnd_endpoint0>;
-                };
-            };
         };
     };
 };
@@ -797,7 +756,6 @@
 #endif
 
 &rcar_sound {
-    pinctrl-0 = <&sound_pins_hdmi>;
     pinctrl-names = "default";
 
     status = "okay";
@@ -816,7 +774,6 @@
         rsnd_port0: port@0 {
             reg = <0>;
             rsnd_endpoint0: endpoint {
-                remote-endpoint = <&dsi_hdmi0_snd_in>;
 
                 dai-format = "i2s";
                 bitclock-master = <&rsnd_endpoint0>;
