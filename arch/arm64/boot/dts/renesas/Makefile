@@ -132,6 +132,9 @@ DTC_FLAGS_rzg2l-sbc += -@
 dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-sbc.dtb
 subdir-$(CONFIG_ARCH_R9A07G044) += overlays
 
+DTC_FLAGS_rs-g2l100 += -@
+dtb-$(CONFIG_ARCH_R9A07G044) += rs-g2l100.dtb
+
 dtb-$(CONFIG_ARCH_R9A07G054) += r9a07g054l2-smarc.dtb
 dtb-$(CONFIG_ARCH_R9A07G054) += r9a07g054l2-smarc-cru-csi-ov5645.dtbo
 r9a07g054l2-smarc-cru-csi-ov5645-dtbs := r9a07g054l2-smarc.dtb r9a07g054l2-smarc-cru-csi-ov5645.dtbo

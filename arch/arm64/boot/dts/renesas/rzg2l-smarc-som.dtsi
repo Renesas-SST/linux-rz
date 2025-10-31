@@ -334,7 +334,7 @@
 	};
 };
 
-&sbc {
+&spi {
 	pinctrl-0 = <&qspi0_pins>;
 	pinctrl-names = "default";
 	status = "okay";
