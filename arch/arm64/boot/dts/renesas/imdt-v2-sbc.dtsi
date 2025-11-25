@@ -225,6 +225,23 @@
 	clock-frequency = <22579200>;
 }; 
 
+
+/* Dummy clock for clkb and clkc */
+&audio_clkb {
+	compatible = "fixed-clock";
+	#clock-cells = <0>;
+	clock-frequency = <0>;
+	status = "okay";
+};
+
+&audio_clkc {
+	compatible = "fixed-clock";
+	#clock-cells = <0>;
+	clock-frequency = <0>;
+	status = "okay";
+};
+
+
 &pinctrl {
 	can1_pins: can1 {
 		pinmux = <RZG2L_PORT_PINMUX(8, 2, 5)>, /* TX */
@@ -939,7 +956,87 @@
 	};
 };
 
- &rcar_sound {
+&rcar_sound {
+	/* remove parent's clocks/clock-names */
+	/delete-property/ clocks;
+	/delete-property/ clock-names;
+
+	/* Re-create clocks array clkb and clkc */
+	clocks = <&cpg CPG_MOD 245>,
+		 <&cpg CPG_MOD 394>,
+		 <&cpg CPG_MOD 393>,
+		 <&cpg CPG_MOD 392>,
+		 <&cpg CPG_MOD 391>,
+		 <&cpg CPG_MOD 390>,
+		 <&cpg CPG_MOD 389>,
+		 <&cpg CPG_MOD 388>,
+		 <&cpg CPG_MOD 387>,
+		 <&cpg CPG_MOD 386>,
+		 <&cpg CPG_MOD 385>,
+		 <&cpg CPG_MOD 384>,
+		 <&cpg CPG_MOD 246>,
+		 <&cpg CPG_MOD 247>,
+		 <&cpg CPG_MOD 381>,
+		 <&cpg CPG_MOD 380>,
+		 <&cpg CPG_MOD 379>,
+		 <&cpg CPG_MOD 378>,
+		 <&cpg CPG_MOD 377>,
+		 <&cpg CPG_MOD 376>,
+		 <&cpg CPG_MOD 375>,
+		 <&cpg CPG_MOD 374>,
+		 <&cpg CPG_MOD 373>,
+		 <&cpg CPG_MOD 372>,
+		 <&cpg CPG_MOD 382>,
+		 <&cpg CPG_MOD 371>,
+		 <&cpg CPG_MOD 370>,
+		 <&cpg CPG_MOD 368>,
+		 <&cpg CPG_MOD 369>,
+		 <&cpg CPG_MOD 248>,
+		 <&cpg CPG_MOD 249>,
+		 <&cpg CPG_MOD 251>,
+		 /* removed: <&cpg CPG_MOD 252>, <&cpg CPG_MOD 253>, as IMDT doesn't need these clocks */
+		 <&cpg CPG_MOD 250>,
+		 <&cpg CPG_MOD 361>,
+		 <&cpg CPG_MOD 360>,
+		 <&cpg CPG_MOD 359>,
+		 <&cpg CPG_MOD 358>,
+		 <&cpg CPG_MOD 357>,
+		 <&cpg CPG_MOD 356>,
+		 <&cpg CPG_MOD 355>,
+		 <&cpg CPG_MOD 354>,
+		 <&cpg CPG_MOD 353>,
+		 <&cpg CPG_MOD 352>,
+		 <&cpg CPG_MOD 254>,
+		 <&cpg CPG_MOD 255>,
+		 <&cpg CPG_MOD 256>,
+		 <&cpg CPG_MOD 362>,
+		 <&cpg CPG_MOD 363>,
+		 <&cpg CPG_MOD 364>;
+
+	/* recreate clock-names but omit clk_b and clk_c */
+	clock-names = "ssi-all",
+				"ssi.9", "ssi.8", "ssi.7", "ssi.6",
+				"ssi.5", "ssi.4", "ssi.3", "ssi.2",
+				"ssi.1", "ssi.0",
+				"ssif_supply_clk",
+				"scu_clk", "scu_clkx2",
+				"src.9", "src.8", "src.7", "src.6",
+				"src.5", "src.4", "src.3", "src.2",
+				"src.1", "src.0",
+				"scu_supply_clk",
+				"mix.1", "mix.0",
+				"ctu.1", "ctu.0",
+				"dvc.0", "dvc.1",
+				"audmac-pp",
+				"adg_clk",
+				/* removed: "clk_b", "clk_c" */
+				"clk_a", "clk_i",
+				"adg.ssi.9", "adg.ssi.8", "adg.ssi.7", "adg.ssi.6",
+				"adg.ssi.5", "adg.ssi.4", "adg.ssi.3", "adg.ssi.2",
+				"adg.ssi.1", "adg.ssi.0",
+				"spdif.0", "spdif.1", "spdif.2",
+				"adg.spdif.0", "adg.spdif.1", "adg.spdif.2";
+
 	pinctrl-names = "default";
 	pinctrl-0 = <&sound_pins>;
 	status = "okay";
