@@ -1074,14 +1074,13 @@
 	clock-frequency = <22579200>;
 };
 
-/* imdt-v2h-sbc - Clocks B & C require removal for audio rcar_sound*/
-//&audio_clkb {
-//	clock-frequency = <24576000>;
-//};
+&audio_clkb {
+	clock-frequency = <24576000>;
+};
 
-//&audio_clkc {
-//	clock-frequency = <22579200>;
-//};
+&audio_clkc {
+	clock-frequency = <22579200>;
+};
 
 &qextal_clk {
 	clock-frequency = <24000000>;
