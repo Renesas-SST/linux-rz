@@ -27,7 +27,6 @@ typedef u16		compat_ipc_pid_t;
 #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/sched/task_stack.h>
-#include <linux/uaccess.h>
 
 #ifdef __AARCH64EB__
 #define COMPAT_UTS_MACHINE	"armv8b\0\0"
@@ -98,11 +97,6 @@ static inline int is_compat_thread(struct thread_info *thread)
 }
 
 long compat_arm_syscall(struct pt_regs *regs, int scno);
-
-static inline void __user *arch_compat_alloc_user_space(long len)
-{
-	return (void __user *)compat_user_stack_pointer() - len;
-}
 
 #else /* !CONFIG_COMPAT */
 
