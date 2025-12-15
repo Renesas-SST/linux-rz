@@ -132,8 +132,10 @@ static int rzv2h_pcie_hw_init(struct rzv2h_pcie *pcie, int channel, struct rzv2h
 static int rzv2h_reboot_notifier_cb(struct notifier_block *nb, unsigned long action, void *data)
 {
 	struct rzv2h_pcie_host *host = container_of(nb, struct rzv2h_pcie_host, reboot_nb);
-	dev_dbg(host->dev, "System reboot requested, disabling M2 3.3V regulator\n");
-	regulator_force_disable(host->vdd);
+	if (host->vdd) {
+		dev_dbg(host->dev, "System reboot requested, disabling M2 3.3V regulator\n");
+		regulator_force_disable(host->vdd);
+	}
 	return NOTIFY_OK;
 }
 
@@ -591,7 +593,7 @@ static int rzv2h_pcie_hw_init(struct rzv2h_pcie *pcie, int channel,	struct rzv2h
 	For case 2, it makes sense to make the power sequencing the same as case 1 by disabling the regulator explictly.
 	*/
 
-	if(regulator_is_enabled(host->vdd))
+	if (host->vdd && regulator_is_enabled(host->vdd))
 	{
 		dev_dbg(pcie->dev, "Disabling M2M 3.3V regulator \n");
 		ret = regulator_disable(host->vdd);
@@ -607,12 +609,14 @@ static int rzv2h_pcie_hw_init(struct rzv2h_pcie *pcie, int channel,	struct rzv2h
 	rzv2h_pci_write_reg(pcie, RESET_ALL_ASSERT, PCI_RESET_REG);		/* PCI_RC 310h */
 	msleep(POST_RESET_SLEEP_TIME_MS);
 	/* Enable the PCIE VDD regulator whilst the reset is asserted */
-	dev_dbg(pcie->dev, "Enabling M2M 3.3V regulator \n");
-	ret = regulator_enable(host->vdd); /*Note: This will sleep according to your startup delay in the device tree*/
-	if (ret)
-		return ret;
-	host->reboot_nb.notifier_call = rzv2h_reboot_notifier_cb;
-	ret = register_reboot_notifier(&host->reboot_nb);
+	if (host->vdd) {
+		dev_dbg(pcie->dev, "Enabling M2M 3.3V regulator \n");
+		ret = regulator_enable(host->vdd); /*Note: This will sleep according to your startup delay in the device tree*/
+		if (ret)
+			return ret;
+		host->reboot_nb.notifier_call = rzv2h_reboot_notifier_cb;
+		ret = register_reboot_notifier(&host->reboot_nb);
+	}
 
 	/* SYS set lane mode - only valid RZ/V2H IP */
 	if (host->soc_cfg->device_id == 0x003b)
@@ -645,6 +649,7 @@ static int rzv2h_pcie_hw_init(struct rzv2h_pcie *pcie, int channel,	struct rzv2h
 
 	/* Release the PCIe reset : step14 : RST_PS_B, RST_GP_B, RST_B */
 	msleep(CLOCK_STABLE_SLEEP_TIME_MS); /*This is to ensure that the clock is stable and also that the pulse width is 100ms */
+	rzv2h_pci_write_reg(pcie, RESET_PS_GP_RELEASE, PCI_RESET_REG); /* PCI_RC 310h */
 
 	msleep(20);
 
@@ -663,7 +668,6 @@ static int rzv2h_pcie_hw_init(struct rzv2h_pcie *pcie, int channel,	struct rzv2h
 
 	return -ETIMEDOUT;
 }
-
 static void rzv2h_pcie_reset_assert(void)
 {
 	unsigned long reg;
@@ -1225,7 +1229,8 @@ static const struct of_device_id rzv2h_pcie_of_match[] = {
 static void rzv2_pcie_remove(void *data)
 {
 	struct rzv2h_pcie_host *host = data;
-	regulator_disable(host->vdd);
+	if (host->vdd)
+		regulator_disable(host->vdd);
 }
 
 static int rzv2h_pcie_probe(struct platform_device *pdev)
