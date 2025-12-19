@@ -18,4 +18,3 @@ dtb-y += rzv2l-evk-1.0-cru-csi-ov5645.dtbo
 dtb-y += rzv2h-rdk-1.0-can.dtbo
 dtb-y += rzv2h-rdk-1.0-ext-spi.dtbo
 dtb-y += rzv2h-rdk-1.0-audio-codec.dtbo
-dtb-y += rzv2h-rdk-1.0-audio-hdmi.dtbo
