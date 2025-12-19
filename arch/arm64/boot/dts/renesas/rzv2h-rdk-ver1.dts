@@ -22,8 +22,12 @@
  *   0 - RI2C6 (default)         1 - RSCI_I2C6
  * PCIE_MODE_SEL:
  *   0 - Root Complex (default)  1 - Endpoint
+ * I3C_SEL:
+ *		0 - Disable I3C
+ *		1 - Enable I3C
  */
 
+#define I3C_SEL                 0
 #define RSCI2_UART_I2C_SEL      0
 #define RSCI6_UART_I2C_SEL      1
 #define PCIE_MODE_SEL           0
@@ -327,6 +331,17 @@
              <RZV2H_PORT_PINMUX(2, 1, 1)>; 		/* I3C_SCL */
     };
 
+    sound_pins_hdmi: hdmi-sound {
+        pinmux = <RZV2H_PORT_PINMUX(4, 0, 7)>, /* SSI0_SCK */
+             <RZV2H_PORT_PINMUX(4, 1, 7)>,     /* SSI0_WS */
+             <RZV2H_PORT_PINMUX(4, 2, 7)>;     /* SSI0_SDATA */
+    };
+
+    sound_pins: sound {
+        pinmux = <RZV2H_PORT_PINMUX(9, 5, 7)>, /* SSI0_SCK */
+            <RZV2H_PORT_PINMUX(9, 6, 7)>,     /* SSI0_WS */
+            <RZV2H_PORT_PINMUX(9, 7, 7)>;     /* SSI0_SDATA */
+    };
 };
 
 &qextal_clk {
@@ -644,6 +659,13 @@
                     remote-endpoint = <&hdmi_con_out>;
                 };
             };
+
+            port@2 {
+                reg = <2>;
+                dsi_hdmi0_snd_in: endpoint {
+                    remote-endpoint = <&rsnd_endpoint0>;
+                };
+            };
         };
     };
 };
@@ -739,7 +761,9 @@
     pinctrl-names = "default";
 
     /* Enable when there is an I3C external device defined here */
-    /* status = "okay"; */
+#if (I3C_SEL)
+    status = "okay";
+#endif
 };
 
 #if (!PCIE_MODE_SEL)
@@ -755,6 +779,7 @@
 #endif
 
 &rcar_sound {
+    pinctrl-0 = <&sound_pins_hdmi>;
     pinctrl-names = "default";
 
     status = "okay";
@@ -773,7 +798,7 @@
         rsnd_port0: port@0 {
             reg = <0>;
             rsnd_endpoint0: endpoint {
-
+                remote-endpoint = <&dsi_hdmi0_snd_in>;
                 dai-format = "i2s";
                 bitclock-master = <&rsnd_endpoint0>;
                 frame-master = <&rsnd_endpoint0>;

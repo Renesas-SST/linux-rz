@@ -8,39 +8,42 @@
 
 #include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
 
-&pinctrl {
-    sound_pins: sound {
-        pinmux = <RZV2H_PORT_PINMUX(9, 5, 7)>, /* SSI0_SCK */
-            <RZV2H_PORT_PINMUX(9, 6, 7)>,     /* SSI0_WS */
-            <RZV2H_PORT_PINMUX(9, 7, 7)>;     /* SSI0_SDATA */
-    };
-};
+/ {
+    fragment@0 {
+        target = <&rcar_sound>;
+        __overlay__ {
+            pinctrl-0 = <&sound_pins>;
 
-&rcar_sound {
-    pinctrl-0 = <&sound_pins>;
-
-    ports {
-        #address-cells = <1>;
-        #size-cells = <0>;
-
-        rsnd_port0: port@0 {
-            rsnd_endpoint0: endpoint {
-                remote-endpoint = <&da7219_endpoint>;
-
-                mclk-fs = <256>;
+            ports {
+                rsnd_port0: port@0 {
+                    rsnd_endpoint0: endpoint {
+                        remote-endpoint = <&da7219_endpoint>;
+                        mclk-fs = <256>;
+                    };
+                };
             };
         };
     };
-};
 
-&rsci_i2c7 {
-    da7219: da7219@1a {
-        #address-cells = <1>;
-        #size-cells = <0>;
+    fragment@1 {
+        target = <&adv7535>;
+        __overlay__ {
+            status = "disabled";
+        };
+    };
 
-        port {
-            da7219_endpoint: endpoint {
-                remote-endpoint = <&rsnd_endpoint0>;
+    fragment@2 {
+        target = <&rsci_i2c7>;
+        __overlay__ {
+            da7219: da7219@1a {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                port {
+                    da7219_endpoint: endpoint {
+                        remote-endpoint = <&rsnd_endpoint0>;
+                    };
+                };
             };
         };
     };
