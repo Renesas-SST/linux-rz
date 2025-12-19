@@ -68,6 +68,7 @@
 		vdddo-supply = <&ov5645_vdddo_1v8>;
 		vdda-supply = <&ov5645_vdda_2v8>;
 		vddd-supply = <&ov5645_vddd_1v5>;
+		status = "disabled";
 
 		port {
 			ov5645_ep: endpoint {
