@@ -60,6 +60,15 @@ config VIDEO_AR0521
 	  To compile this driver as a module, choose M here: the
 	  module will be called ar0521.
 
+config VIDEO_AR1335
+        tristate "AR1335"
+        help
+          This is a Video4Linux2 sensor driver for the ON Semiconductor
+          AR1335 camera.
+
+          To compile this driver as a module, choose M here: the
+          module will be called ar1335.
+
 config VIDEO_GC0308
 	tristate "GalaxyCore GC0308 sensor support"
 	select V4L2_CCI_I2C
