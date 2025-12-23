@@ -3,6 +3,7 @@
  * AR1335 driver
  *
  * Copyright (C) 2024 Advanced Micro Devices, Inc.
+ * Copyright (C) 2025 Renesas Electronics Corp.
  *
  * Contacts: Anil Kumar Mamidala
  *           Vishnu Vardhan Ravuri
@@ -21,87 +22,110 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 #define AR1335_NAME "ar1335"
-#define AR1335_MAX_RATIO_MISMATCH 10
-#define EXPOSURE_MAX 0xC4E
-#define FRAME_LENGTH_LINE_MAX 0x0C4E
-#define LINE_LENGTH_PCK_MAX 4656
+#define AR1335_MAX_RATIO_MISMATCH 		10
+#define EXPOSURE_MAX					0xC4E
+#define FRAME_LENGTH_LINE_MAX 			0x0C4E
+#define LINE_LENGTH_PCK_MAX				4656
 /* External clock (extclk) frequencies */
-#define AR1335_EXTCLK_MIN		(6 * 1000 * 1000)
-#define AR1335_EXTCLK_MAX		(48 * 1000 * 1000)
+#define AR1335_EXTCLK_MIN				(6 * 1000 * 1000)
+#define AR1335_EXTCLK_MAX				(48 * 1000 * 1000)
 /* PLL and PLL2 */
-#define AR1335_PLL_MIN			(320 * 1000 * 1000)
-#define AR1335_PLL_MAX			(1200 * 1000 * 1000)
-#define MAX_FRAME_RATE 60
-#define MIN_FRAME_RATE 30
-#define AR1335_DEF_FRAME_RATE 30
+#define AR1335_PLL_MIN					(320 * 1000 * 1000)
+#define AR1335_PLL_MAX					(1200 * 1000 * 1000)
+#define MAX_FRAME_RATE					60
+#define MIN_FRAME_RATE					30
+#define AR1335_DEF_FRAME_RATE			30
 #define REG_FRAME_RATE 0x0340
 
 /* Effective pixel sample rate on the pixel array. */
-#define AR1335_PIXEL_CLOCK_RATE		(220 * 1000 * 1000)
-#define AR1335_PIXEL_CLOCK_MIN		(168 * 1000 * 1000)
-#define AR1335_PIXEL_CLOCK_MAX		(414 * 1000 * 1000)
+#define AR1335_PIXEL_CLOCK_RATE			(220 * 1000 * 1000)
+#define AR1335_PIXEL_CLOCK_MIN			(168 * 1000 * 1000)
+#define AR1335_PIXEL_CLOCK_MAX			(414 * 1000 * 1000)
 
-#define AR1335_MIN_X_ADDR_START		8u
-#define AR1335_MIN_Y_ADDR_START		8u
-#define AR1335_MAX_X_ADDR_END		4231u
-#define AR1335_MAX_Y_ADDR_END		3143u
+#define AR1335_MIN_X_ADDR_START			8u
+#define AR1335_MIN_Y_ADDR_START			8u
+#define AR1335_MAX_X_ADDR_END			4231u
+#define AR1335_MAX_Y_ADDR_END			3143u
 
-#define AR1335_WIDTH_MIN		0u
-#define AR1335_WIDTH_MAX		4239u
-#define AR1335_HEIGHT_MIN		0u
-#define AR1335_HEIGHT_MAX		3151u
+#define AR1335_WIDTH_MIN				0u
+#define AR1335_WIDTH_MAX				4239u
+#define AR1335_HEIGHT_MIN				0u
+#define AR1335_HEIGHT_MAX				3151u
 
-#define AR1335_WIDTH_BLANKING_MIN	240u
-#define AR1335_HEIGHT_BLANKING_MIN	142u /* must be even */
-#define AR1335_TOTAL_HEIGHT_MAX		65535u /* max_frame_length_lines */
-#define AR1335_TOTAL_WIDTH_MAX		65532u /* max_line_length_pck */
+#define AR1335_WIDTH_BLANKING_MIN		240u
+#define AR1335_HEIGHT_BLANKING_MIN		142u /* must be even */
+#define AR1335_TOTAL_HEIGHT_MAX			65535u /* max_frame_length_lines */
+#define AR1335_TOTAL_WIDTH_MAX			65532u /* max_line_length_pck */
 
-#define AR1335_ANA_GAIN_MIN		0x00
-#define AR1335_ANA_GAIN_MAX		0x3f
-#define AR1335_ANA_GAIN_STEP		0x01
-#define AR1335_ANA_GAIN_DEFAULT		0x00
+#define AR1335_ANA_GAIN_MIN				0x00
+#define AR1335_ANA_GAIN_MAX				0x3f
+#define AR1335_ANA_GAIN_STEP			0x01
+#define AR1335_ANA_GAIN_DEFAULT			50
 
 /* AR1335 registers */
 #define AR1335_REG_VT_PIX_CLK_DIV		0x0300
-#define AR1335_REG_FRAME_LENGTH_LINES		0x0340
+#define AR1335_REG_FRAME_LENGTH_LINES	0x0340
 
-#define AR1335_REG_CHIP_ID			0x0000
+#define AR1335_REG_CHIP_ID				0x0000
 #define AR1335_REG_COARSE_INTEGRATION_TIME	0x3012
 #define AR1335_REG_ROW_SPEED			0x3016
 #define AR1335_REG_EXTRA_DELAY			0x3018
-#define AR1335_REG_RESET			0x301A
-#define   AR1335_REG_RESET_DEFAULTS		  0x0238
-#define   AR1335_REG_RESET_GROUP_PARAM_HOLD	  0x8000
-#define   AR1335_REG_RESET_STREAM		  BIT(2)
-#define   AR1335_REG_RESET_RESTART		  BIT(1)
-#define   AR1335_REG_RESET_INIT			  BIT(0)
+#define AR1335_REG_RESET				0x301A
+#define   AR1335_REG_RESET_DEFAULTS		0x0238
+#define   AR1335_REG_RESET_GROUP_PARAM_HOLD	0x8000
+#define   AR1335_REG_RESET_STREAM		BIT(2)
+#define   AR1335_REG_RESET_RESTART		BIT(1)
+#define   AR1335_REG_RESET_INIT			BIT(0)
 
-#define AR1335_REG_ANA_GAIN_CODE_GLOBAL		0x3028
+#define AR1335_REG_ANA_GAIN_CODE_GLOBAL	0x3028
 
-#define AR1335_REG_GREEN1_GAIN			0x3056
-#define AR1335_REG_BLUE_GAIN			0x3058
-#define AR1335_REG_RED_GAIN			0x305A
-#define AR1335_REG_GREEN2_GAIN			0x305C
-#define AR1335_REG_GLOBAL_GAIN			0x305E
+#define AR1335_REG_RED_GAIN			0x3056
+#define AR1335_REG_GREEN2_GAIN		0x3058
+#define AR1335_REG_GREEN1_GAIN		0x305A
+#define AR1335_REG_BLUE_GAIN		0x305C
+#define AR1335_REG_GLOBAL_GAIN		0x305E
 
-#define AR1335_REG_HISPI_TEST_MODE		0x3066
-#define AR1335_REG_HISPI_TEST_MODE_LP11		  0x0004
+#define AR1335_REG_HISPI_TEST_MODE	0x3066
+#define AR1335_REG_HISPI_TEST_MODE_LP11	0x0004
 
-#define AR1335_REG_TEST_PATTERN_MODE		0x3070
+#define AR1335_REG_TEST_PATTERN_MODE	0x3070
 
 #define AR1335_REG_SERIAL_FORMAT		0x31AE
-#define AR1335_REG_SERIAL_FORMAT_MIPI		  0x0200
+#define AR1335_REG_SERIAL_FORMAT_MIPI	0x0200
 
-#define AR1335_REG_HISPI_CONTROL_STATUS		0x31C6
+#define AR1335_REG_HISPI_CONTROL_STATUS	0x31C6
 #define AR1335_REG_HISPI_CONTROL_STATUS_FRAMER_TEST_MODE_ENABLE 0x80
 
-#define be		cpu_to_be16
+/* Color balance gain constants */
+#define AR1335_GAIN_UNITY				0x2000	/* 1.0x gain in 3.13 format */
+#define AR1335_GAIN_MIN					0x0000	/* 0.0x gain (minimum) */
+#define AR1335_GAIN_MAX					0x7F80	/* 7.984375x gain (maximum) */
+#define AR1335_BALANCE_RANGE_HALF		512	/* Half of balance range (-512 to +511) */
+
+/*
+ * AR1335 Green Balance Compensation
+ * 
+ * The AR1335 sensor tends to have excessive green channel response compared to
+ * red and blue channels, creating a greenish color cast. A positive green
+ * balance of +450 (out of ±512 range) REDUCES the green channel gain to
+ * achieve better color balance.
+ * 
+ * Note: In the balance calculation, positive values reduce the channel gain
+ * relative to unity, while negative values increase it.
+ * 
+ * This value was determined through calibration with standard illuminants
+ * and may need adjustment based on specific lens/filter combinations.
+ */
+#define AR1335_GREEN_BALANCE_DEFAULT	450	/* Reduce excessive green response */
+
+#define be	cpu_to_be16
 
 static const char * const ar1335_supply_names[] = {
 	"vdd_io",	/* I/O (1.8V) supply */
 	"vdd",		/* Core, PLL and MIPI (1.2V) supply */
 	"vaa",		/* Analog (2.7V) supply */
 };
+
 struct ar1335_reg {
 	u16 addr;
 	u16 val;
@@ -120,6 +144,7 @@ struct ar1335_context_res {
 	s32 cur_res;
 	struct ar1335_res_struct *res_table;
 };
+
 static const s64 ar1335_link_frequencies[] = {
 	184000000,
 };
@@ -151,6 +176,7 @@ struct ar1335_dev {
 
 	struct regulator *supplies[ARRAY_SIZE(ar1335_supply_names)];
 	struct gpio_desc *reset_gpio;
+	struct gpio_desc *power_gpio;
 
 	/* lock to protect all members below */
 	struct mutex lock;
@@ -167,6 +193,121 @@ struct ar1335_dev {
 		u16 mult2;
 		u16 vt_pix;
 	} pll;
+};
+
+/*
+ * AR1335 Gain Configuration
+ * Gain table based on AR1335 datasheet; Table 17. Recommended Gain Settings
+ *
+ * The AR1335 uses a dual gain system with a 16-bit register format (0x305E):
+ * Bits [15:7] = Digital Gain (9 bits in 3.6 fixed-point format)
+ * Bits [6:4]  = Analog Coarse Gain (3 bits)
+ * Bits [3:0]  = Analog Fine Gain (4 bits)
+ *
+ * Strategy: Use analog gain first (better SNR), then digital gain (extended range)
+ * Max analog: 7.75x, Max digital: 7.98x, Max total: ~62x
+ */
+static const struct ar1335_gain_entry {
+    u16 code;
+    u16 analog_gain_x100;  // gain * 100
+    u16 digital_gain_x100;
+    u16 total_gain_x100;
+} ar1335_gain_table[] = {
+    // Analog gain (digital = 1.0x)
+    {0x2010, 100, 100, 100},     // 1.0x
+    {0x2014, 125, 100, 125},     // 1.25x
+    {0x2018, 150, 100, 150},     // 1.5x
+    {0x201C, 175, 100, 175},     // 1.75x
+    {0x2020, 200, 100, 200},     // 2.0x
+    {0x2022, 225, 100, 225},     // 2.25x
+    {0x2024, 250, 100, 250},     // 2.5x
+    {0x2026, 275, 100, 275},     // 2.75x
+    {0x2028, 300, 100, 300},     // 3.0x
+    {0x202A, 325, 100, 325},     // 3.25x
+    {0x202C, 350, 100, 350},     // 3.5x
+    {0x202E, 375, 100, 375},     // 3.75x
+    {0x2030, 400, 100, 400},     // 4.0x
+    {0x2031, 425, 100, 425},     // 4.25x
+    {0x2032, 450, 100, 450},     // 4.5x
+    {0x2033, 475, 100, 475},     // 4.75x
+    {0x2034, 500, 100, 500},     // 5.0x
+    {0x2035, 525, 100, 525},     // 5.25x
+    {0x2036, 550, 100, 550},     // 5.5x
+    {0x2037, 575, 100, 575},     // 5.75x
+    {0x2038, 600, 100, 600},     // 6.0x
+    {0x2039, 625, 100, 625},     // 6.25x
+    {0x203A, 650, 100, 650},     // 6.5x
+    {0x203B, 675, 100, 675},     // 6.75x
+    {0x203C, 700, 100, 700},     // 7.0x
+    {0x203D, 725, 100, 725},     // 7.25x
+    {0x203E, 750, 100, 750},     // 7.5x
+    {0x203F, 775, 100, 775},     // 7.75x (max analog)
+    // Digital gain starts (analog stays at 7.75x)
+    {0x213F, 775, 103, 800},     // 8.0x
+    {0x223F, 775, 106, 825},     // 8.25x
+    {0x233F, 775, 109, 850},     // 8.5x
+    {0x243F, 775, 113, 875},     // 8.75x
+    {0x253F, 775, 116, 900},     // 9.0x
+    {0x263F, 775, 119, 925},     // 9.25x
+    {0x273F, 775, 122, 950},     // 9.5x
+    {0x28BF, 775, 127, 975},     // 9.75x
+    {0x29BF, 775, 130, 1000},    // 10.0x
+    {0x2ABF, 775, 133, 1025},    // 10.25x
+    {0x2BBF, 775, 136, 1050},    // 10.5x
+    {0x2CBF, 775, 139, 1075},    // 10.75x
+    {0x2DBF, 775, 142, 1100},    // 11.0x
+    {0x2EBF, 775, 145, 1125},    // 11.25x
+    {0x2FBF, 775, 148, 1150},    // 11.5x
+    {0x30BF, 775, 152, 1175},    // 11.75x
+    {0x31BF, 775, 155, 1200},    // 12.0x
+    {0x32BF, 775, 158, 1225},    // 12.25x
+    {0x33BF, 775, 161, 1250},    // 12.5x
+    {0x34BF, 775, 164, 1275},    // 12.75x
+    {0x35BF, 775, 167, 1300},    // 13.0x
+    {0x36BF, 775, 170, 1325},    // 13.25x
+    {0x37BF, 775, 173, 1350},    // 13.5x
+    {0x393F, 775, 178, 1375},    // 13.75x
+    {0x3A3F, 775, 181, 1400},    // 14.0x
+    {0x3B3F, 775, 184, 1425},    // 14.25x
+    {0x3C3F, 775, 188, 1450},    // 14.5x
+    {0x3D3F, 775, 191, 1475},    // 14.75x
+    {0x3E3F, 775, 194, 1500},    // 15.0x
+    {0x3F3F, 775, 197, 1525},    // 15.25x
+    {0x403F, 775, 200, 1550},    // 15.5x
+    {0x413F, 775, 203, 1575},    // 15.75x
+    {0x423F, 775, 206, 1600},    // 16.0x
+    {0x433F, 775, 209, 1625},    // 16.25x
+    {0x443F, 775, 213, 1650},    // 16.5x
+    {0x453F, 775, 216, 1675},    // 16.75x
+    {0x463F, 775, 219, 1700},    // 17.0x
+    {0x473F, 775, 222, 1725},    // 17.25x
+    {0x48BF, 775, 227, 1750},    // 17.5x
+    {0x49BF, 775, 230, 1775},    // 17.75x
+    {0x4ABF, 775, 233, 1800},    // 18.0x
+    {0x4BBF, 775, 236, 1825},    // 18.25x
+    {0x4CBF, 775, 239, 1850},    // 18.5x
+    {0x4DBF, 775, 242, 1875},    // 18.75x
+    {0x4EBF, 775, 245, 1900},    // 19.0x
+    {0x4FBF, 775, 248, 1925},    // 19.25x
+    {0x50BF, 775, 252, 1950},    // 19.5x
+    {0x51BF, 775, 255, 1975},    // 19.75x
+    {0x52BF, 775, 258, 2000},    // 20.0x
+    {0x53BF, 775, 261, 2025},    // 20.25x
+    {0x54BF, 775, 264, 2050},    // 20.5x
+    {0x55BF, 775, 267, 2075},    // 20.75x
+    {0x56BF, 775, 270, 2100},    // 21.0x
+    {0x57BF, 775, 273, 2125},    // 21.25x
+    {0x593F, 775, 278, 2150},    // 21.5x
+    {0x5A3F, 775, 281, 2175},    // 21.75x
+    {0x5B3F, 775, 284, 2200},    // 22.0x
+    {0x5C3F, 775, 288, 2225},    // 22.25x
+    {0x5D3F, 775, 291, 2250},    // 22.5x
+    {0x5E5F, 775, 294, 2275},    // 22.75x
+    {0x5F3F, 775, 297, 2300},    // 23.0x
+    {0x603F, 775, 300, 2325},    // 23.25x
+    {0x613F, 775, 303, 2350},    // 23.5x
+    {0x623F, 775, 306, 2375},    // 23.75x
+    {0x633F, 775, 309, 2400},    // 24.0x
 };
 
 static inline struct ar1335_dev *to_ar1335_dev(struct v4l2_subdev *sd)
@@ -199,7 +340,6 @@ static int ar1335_code_to_bpp(struct ar1335_dev *sensor)
 
 	return -EINVAL;
 }
-
 
 /* Data must be BE16, the first value is the register address */
 static int ar1335_write_regs(struct ar1335_dev *sensor, const __be16 *data,
@@ -251,24 +391,101 @@ static int ar1335_set_geometry(struct ar1335_dev *sensor)
 	};
 	return ar1335_write_regs(sensor, regs, ARRAY_SIZE(regs));
 }
+
+/**
+ * ar1335_set_gains() - Configure sensor gain settings
+ * @sensor: AR1335 sensor device
+ * 
+ * Applies both global gain (from gain table) and individual color channel
+ * gains for white balance correction. The AR1335 uses separate analog/digital
+ * gain in the global register plus per-color digital gains.
+ * 
+ * Returns: 0 on success, negative error code on failure
+ */
 static int ar1335_set_gains(struct ar1335_dev *sensor)
 {
-	int green = sensor->ctrls.gain->val;
-	int red = max(green + sensor->ctrls.red_balance->val, 0);
-	int blue = max(green + sensor->ctrls.blue_balance->val, 0);
-	unsigned int gain = min(red, min(green, blue));
-	unsigned int analog = min(gain, 64u); /* range is 0 - 127 */
-	__be16 regs[5];
+	int gain_index = sensor->ctrls.gain->val;
+	int red_balance = sensor->ctrls.red_balance ? sensor->ctrls.red_balance->val : 0;
+	int blue_balance = sensor->ctrls.blue_balance ? sensor->ctrls.blue_balance->val : 0;
+	int green_balance = AR1335_GREEN_BALANCE_DEFAULT;
+	int ret;
 
-	red   = min(red   - analog + 64, 511u);
-	green = min(green - analog + 64, 511u);
-	blue  = min(blue  - analog + 64, 511u);
-	regs[0] = be(AR1335_REG_GREEN1_GAIN);
-	regs[1] = be(green << 7 | analog);
-	regs[2] = be(blue  << 7 | analog);
-	regs[3] = be(red   << 7 | analog);
-	regs[4] = be(green << 7 | analog);
-	return ar1335_write_regs(sensor, regs, ARRAY_SIZE(regs));
+	if (gain_index >= (int)ARRAY_SIZE(ar1335_gain_table)) {
+		dev_warn(&sensor->i2c_client->dev, "Gain index %d too high, clamping to %d\n",
+				gain_index, (int)ARRAY_SIZE(ar1335_gain_table) - 1);
+		gain_index = ARRAY_SIZE(ar1335_gain_table) - 1;
+	}
+	if (gain_index < 0) {
+		dev_warn(&sensor->i2c_client->dev, "Gain index %d too low, clamping to 0\n", gain_index);
+		gain_index = 0;
+	}
+
+	u16 global_gain_code = ar1335_gain_table[gain_index].code;
+
+	// Write global gain
+	ret = ar1335_write_reg(sensor, AR1335_REG_GLOBAL_GAIN, global_gain_code);
+	if (ret) {
+		dev_err(&sensor->i2c_client->dev, "Failed to write global gain: %d\n", ret);
+		return ret;
+	}
+
+	// Calculate individual channel gains
+	u16 red_gain = AR1335_GAIN_UNITY;      // 1.0x base
+	u16 green1_gain = AR1335_GAIN_UNITY;   // 1.0x base  
+	u16 green2_gain = AR1335_GAIN_UNITY;   // 1.0x base
+	u16 blue_gain = AR1335_GAIN_UNITY;     // 1.0x base
+
+	/* Apply red balance adjustment (-512 to +511 range) */
+	if (red_balance != 0) {
+		int red_adjustment = (red_balance * AR1335_GAIN_UNITY) / AR1335_BALANCE_RANGE_HALF;
+		red_gain = AR1335_GAIN_UNITY + red_adjustment;
+		red_gain = max(AR1335_GAIN_MIN, min(AR1335_GAIN_MAX, (int)red_gain));
+	}
+
+	/* Apply blue balance adjustment */
+	if (blue_balance != 0) {
+		int blue_adjustment = (blue_balance * AR1335_GAIN_UNITY) / AR1335_BALANCE_RANGE_HALF;
+		blue_gain = AR1335_GAIN_UNITY + blue_adjustment;
+		blue_gain = max(AR1335_GAIN_MIN, min(AR1335_GAIN_MAX, (int)blue_gain));
+	}
+
+	/* Apply green balance adjustment */
+	int green_adjustment = (green_balance * AR1335_GAIN_UNITY) / AR1335_BALANCE_RANGE_HALF;
+	green1_gain = AR1335_GAIN_UNITY + green_adjustment;
+	green2_gain = AR1335_GAIN_UNITY + green_adjustment;
+	green1_gain = max(AR1335_GAIN_MIN, min(AR1335_GAIN_MAX, (int)green1_gain));
+	green2_gain = max(AR1335_GAIN_MIN, min(AR1335_GAIN_MAX, (int)green2_gain));
+
+	/* Write individual channel gains */
+	ret = ar1335_write_reg(sensor, AR1335_REG_RED_GAIN, red_gain);
+	if (ret) {
+		dev_err(&sensor->i2c_client->dev, "Failed to write red gain: %d\n", ret);
+		return ret;
+	}
+
+	ret = ar1335_write_reg(sensor, AR1335_REG_GREEN2_GAIN, green2_gain);
+	if (ret) {
+		dev_err(&sensor->i2c_client->dev, "Failed to write green2 gain: %d\n", ret);
+		return ret;
+	}
+
+	ret = ar1335_write_reg(sensor, AR1335_REG_GREEN1_GAIN, green1_gain);
+	if (ret) {
+		dev_err(&sensor->i2c_client->dev, "Failed to write green1 gain: %d\n", ret);
+		return ret;
+	}
+
+	ret = ar1335_write_reg(sensor, AR1335_REG_BLUE_GAIN, blue_gain);
+	if (ret) {
+		dev_err(&sensor->i2c_client->dev, "Failed to write blue gain: %d\n", ret);
+		return ret;
+	}
+
+	dev_dbg(&sensor->i2c_client->dev, 
+			"Individual gains set - Red:0x%04x, Green1:0x%04x, Green2:0x%04x, Blue:0x%04x\n",
+			red_gain, green1_gain, green2_gain, blue_gain);
+
+	return 0;
 }
 
 static u32 calc_pll(struct ar1335_dev *sensor, u32 freq, u16 *pre_ptr, u16 *mult_ptr)
@@ -668,11 +885,12 @@ static int ar1335_init_controls(struct ar1335_dev *sensor)
 			  AR1335_ANA_GAIN_STEP, AR1335_ANA_GAIN_DEFAULT);
 
 	/* Manual gain */
-	ctrls->gain = v4l2_ctrl_new_std(hdl, ops, V4L2_CID_GAIN, 0, 511, 1, 40);
+	ctrls->gain = v4l2_ctrl_new_std(hdl, ops, V4L2_CID_GAIN, 0, 511, 1, 30);
 	ctrls->red_balance = v4l2_ctrl_new_std(hdl, ops, V4L2_CID_RED_BALANCE,
 					       -512, 511, 1, 0);
 	ctrls->blue_balance = v4l2_ctrl_new_std(hdl, ops, V4L2_CID_BLUE_BALANCE,
 						-512, 511, 1, 0);
+
 	v4l2_ctrl_cluster(3, &ctrls->gain);
 
 	/* Initialize blanking limits using the default 2592x1944 format. */
@@ -1003,7 +1221,10 @@ static int ar1335_power_off(struct device *dev)
 	clk_disable_unprepare(sensor->extclk);
 
 	if (sensor->reset_gpio)
-		gpiod_set_value(sensor->reset_gpio, 1); /* assert RESET signal */
+		gpiod_set_value_cansleep(sensor->reset_gpio, 1); /* assert RESET signal */
+
+	if (sensor->power_gpio)
+		gpiod_set_value_cansleep(sensor->power_gpio, 1); /* Disable power (active LOW) */
 
 	for (i = ARRAY_SIZE(ar1335_supply_names) - 1; i >= 0; i--) {
 		if (sensor->supplies[i])
@@ -1012,51 +1233,100 @@ static int ar1335_power_off(struct device *dev)
 	return 0;
 }
 
+/**
+ * ar1335_power_on() - Power up sensor following datasheet Figure 29 sequence
+ *
+ * Datasheet Power-Up Sequence:
+ * 1. Set XSHUTDOWN LOW
+ * 2. Power up VDD_IO (1.8V), VDDIO_ANA (1.8V) 
+ * 3. After 1-500ms, power up VDD/VDD_ANA/VDD_PLL/VDD_PHY (1.2V) and VAA/VAA_PIX (2.7V)
+ * 4. Apply EXTCLK (can be applied anytime)
+ * 5. After 1-500ms, set XSHUTDOWN HIGH
+ * 6-9. I2C config, mode_select, PLL lock, streaming (handled in ar1335_set_stream)
+ */
 static int ar1335_power_on(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct ar1335_dev *sensor = to_ar1335_dev(sd);
 	unsigned int cnt;
 	int ret;
-		gpiod_set_value(sensor->reset_gpio, 0);
-		mdelay(1);
-		gpiod_set_value(sensor->reset_gpio, 1);
-		mdelay(1);
 
+	/* Step 1: Set XSHUTDOWN LOW (assert reset) */
+	if(sensor->reset_gpio)
+	{
+		dev_dbg(dev, "Resetting GPIO\n");
+		gpiod_set_value_cansleep(sensor->reset_gpio, 0);
+		mdelay(1);
+		gpiod_set_value_cansleep(sensor->reset_gpio, 1);
+		mdelay(1);
+	}
+
+	/* Step 2: Power up 1.8V supplies first (VDD_IO, VDDIO_ANA) */
+	for (cnt = 0; cnt < ARRAY_SIZE(ar1335_supply_names); cnt++) {
+		if (sensor->supplies[cnt] && 
+			(strstr(ar1335_supply_names[cnt], "vdd_io") || 
+			strstr(ar1335_supply_names[cnt], "vddio_ana"))) {
+			ret = regulator_enable(sensor->supplies[cnt]);
+			if (ret) goto disable_supplies;
+		}
+	}
+
+	/* Step 3: Wait 1-500ms as per datasheet timing requirement */
+	usleep_range(1000, 2000);
+
+	/* Step 4 continued: Power up 1.2V and 2.7V supplies (any order) */
+	for (cnt = 0; cnt < ARRAY_SIZE(ar1335_supply_names); cnt++) {
+		if (sensor->supplies[cnt] && 
+			!strstr(ar1335_supply_names[cnt], "vdd_io") &&
+			!strstr(ar1335_supply_names[cnt], "vddio_ana")) {
+			ret = regulator_enable(sensor->supplies[cnt]);
+			if (ret) goto disable_supplies;
+		}
+	}
+
+	/* Step 5: Enable external clock (EXTCLK) */
+	ret = clk_prepare_enable(sensor->extclk);
+	if (ret) goto disable_supplies;
+
+	/* Step 6: Wait 1-500ms, then set XSHUTDOWN HIGH (release reset) */
+	usleep_range(1000, 2000);
+
+	if (sensor->reset_gpio) {
+		gpiod_set_value_cansleep(sensor->reset_gpio, 1);
+		usleep_range(1000, 2000);
+		gpiod_set_value_cansleep(sensor->reset_gpio, 0);
+		usleep_range(1000, 2000);
+	}
+
+	/* Step 7: Initialize sensor registers (prepare for steps 6-9) */
 	for (cnt = 0; cnt < ARRAY_SIZE(initial_regs); cnt++) {
 		ret = ar1335_write_regs(sensor, initial_regs[cnt].data,
 					initial_regs[cnt].count);
-		if (ret)
-			goto off;
+		if (ret) goto off;
 	}
-
+	
+	/* Configure Serial format */
 	ret = ar1335_write_reg(sensor, AR1335_REG_SERIAL_FORMAT,
-			       AR1335_REG_SERIAL_FORMAT_MIPI |
-			       sensor->lane_count);
-	if (ret)
-		goto off;
-
-	/* set MIPI test mode - disabled for now */
-	ret = ar1335_write_reg(sensor, AR1335_REG_HISPI_TEST_MODE,
-			       ((0x40 << sensor->lane_count) - 0x40) |
-			       AR1335_REG_HISPI_TEST_MODE_LP11);
-	if (ret)
-		goto off;
-
-	ret = ar1335_write_reg(sensor, AR1335_REG_ROW_SPEED, 0x110 |
-			       4 / sensor->lane_count);
-	if (ret)
-		goto off;
+				AR1335_REG_SERIAL_FORMAT_MIPI | sensor->lane_count);
+	if (ret) goto off;
 
 	return 0;
+
 off:
 	ar1335_power_off(dev);
+	return ret;
+
+disable_supplies:
+	for (cnt = 0; cnt < ARRAY_SIZE(ar1335_supply_names); cnt++) {
+		if (sensor->supplies[cnt])
+			regulator_disable(sensor->supplies[cnt]);
+	}
 	return ret;
 }
 
 static int ar1335_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *sd_state,
-				 struct v4l2_subdev_mbus_code_enum *code)
+				struct v4l2_subdev_state *sd_state,
+				struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ar1335_dev *sensor = to_ar1335_dev(sd);
 
@@ -1274,18 +1544,25 @@ static int ar1335_probe(struct i2c_client *client)
 	sensor->sd.flags = V4L2_SUBDEV_FL_HAS_DEVNODE;
 	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sensor->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+
 	ret = media_entity_pads_init(&sensor->sd.entity, 1, &sensor->pad);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "Failed to init media entity pads: %d\n", ret);
 		return ret;
+	}
 
-	for (cnt = 0; cnt < ARRAY_SIZE(ar1335_supply_names); cnt++) {
-		struct regulator *supply = devm_regulator_get(dev,
+	/* Get power supplies */
+	for (int cnt = 0; cnt < ARRAY_SIZE(ar1335_supply_names); cnt++) {
+		struct regulator *supply = devm_regulator_get_optional(dev,
 						ar1335_supply_names[cnt]);
-
 		if (IS_ERR(supply)) {
-			dev_info(dev, "no %s regulator found: %li\n",
-				 ar1335_supply_names[cnt], PTR_ERR(supply));
-			return PTR_ERR(supply);
+			if (PTR_ERR(supply) == -EPROBE_DEFER) {
+				ret = -EPROBE_DEFER;
+				goto entity_cleanup;
+			}
+			dev_info(dev, "no %s regulator found, using dummy\n",
+				ar1335_supply_names[cnt]);
+			supply = NULL;
 		}
 		sensor->supplies[cnt] = supply;
 	}
@@ -1293,23 +1570,31 @@ static int ar1335_probe(struct i2c_client *client)
 	mutex_init(&sensor->lock);
 
 	ret = ar1335_init_controls(sensor);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "Failed to init controls: %d\n", ret);
 		goto entity_cleanup;
+	}
 
 	ar1335_adj_fmt(&sensor->fmt);
 
 	ret = v4l2_async_register_subdev(&sensor->sd);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "Failed to register async subdev: %d\n", ret);
 		goto free_ctrls;
+	}
+
+	/* Power on and initialize sensor */
 	ret = ar1335_power_on(&client->dev);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "Failed to power on sensor: %d\n", ret);
 		goto disable;
+	}
+
 	dev_info(&client->dev, "AR1335 probe completed successfully\n");
 	return 0;
 
 disable:
 	v4l2_async_unregister_subdev(&sensor->sd);
-	media_entity_cleanup(&sensor->sd.entity);
 free_ctrls:
 	v4l2_ctrl_handler_free(&sensor->ctrls.handler);
 entity_cleanup:
@@ -1330,7 +1615,7 @@ static void ar1335_remove(struct i2c_client *client)
 }
 
 static const struct of_device_id ar1335_id[] = {
-	{.compatible = AR1335_NAME },
+	{.compatible = "onsemi,ar1335" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, ar1335_id);
