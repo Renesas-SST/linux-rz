@@ -2,9 +2,16 @@
 /*
  * Common device tree for the IMDT Renesas V2N or V2H SBCs
  *
- * Copyright (C) 2022 Renesas Electronics Corp.
+ * Copyright (C) 2025 Renesas Electronics Corp.
  * Copyright (C) 2024 IMD Technologies Ltd.
  */
+
+/* I2C7_SEL:
+ *	0 - Use RS232 (default)
+ *	1 - Use I2C7 for CSI camera slot 4
+*/
+
+#define I2C7_SEL	0
 
 / {
 	chosen {
@@ -69,6 +76,24 @@
 		regulator-boot-on;
 		regulator-always-on;
 	};
+	reg_2p8v: regulator5 {
+		compatible = "regulator-fixed";
+
+		regulator-name = "fixed-2.8V";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+	reg_1p5v: regulator6 {
+		compatible = "regulator-fixed";
+
+		regulator-name = "fixed-1.5V";
+		regulator-min-microvolt = <1500000>;
+		regulator-max-microvolt = <1500000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
 
 	vccq_sdhi0: regulator-vccq-sdhi0 {
 		compatible = "regulator-gpio";
@@ -78,7 +103,7 @@
 		regulator-max-microvolt = <3300000>;
 
 		// LDO_SEL1 input on RAA215300 PMIC
-		gpios = <&pinctrl RZG2L_GPIO(10, 0) GPIO_ACTIVE_HIGH>;
+		gpios = <&pinctrl RZV2H_GPIO(A, 0) GPIO_ACTIVE_HIGH>;
 
 		gpios-states = <0>;
 		states = <3300000 0 1800000 1>;
@@ -92,7 +117,7 @@
 		regulator-max-microvolt = <3300000>;
 
 		// LDO_SEL2 input on RAA215300 PMIC
-		gpios = <&pinctrl RZG2L_GPIO(10, 2) GPIO_ACTIVE_HIGH>;
+		gpios = <&pinctrl RZV2H_GPIO(A, 2) GPIO_ACTIVE_HIGH>;
 
 		gpios-states = <0>;
 		states = <3300000 0 1800000 1>;
@@ -105,7 +130,7 @@
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 
-		gpio = <&pinctrl RZG2L_GPIO(7, 5) GPIO_ACTIVE_HIGH>;
+		gpio = <&pinctrl RZV2H_GPIO(7, 5) GPIO_ACTIVE_HIGH>;
 
 		startup-delay-us = <100000>;
 		enable-active-high;
@@ -129,6 +154,24 @@
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
 		clock-frequency = <24000000>;
+	};
+
+	vdd4g_0p8: vdd4g-0p8-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd4g-0p8";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <800000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vdd5g_1p8: vdd5g-1p8-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd5g-1p8";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+		regulator-boot-on;
 	};
 
 	// ov5645_vdddo_1v8: 1p8v {
@@ -211,8 +254,8 @@
 
 	dsi_adaptor_i2c: dsi_adaptor_i2c {
 		compatible = "i2c-gpio";
-		sda-gpios = <&pinctrl RZG2L_GPIO(2, 0) GPIO_ACTIVE_HIGH>;
-		scl-gpios = <&pinctrl RZG2L_GPIO(2, 1) GPIO_ACTIVE_HIGH>;
+		sda-gpios = <&pinctrl RZV2H_GPIO(2, 0) GPIO_ACTIVE_HIGH>;
+		scl-gpios = <&pinctrl RZV2H_GPIO(2, 1) GPIO_ACTIVE_HIGH>;
 		i2c-gpio,delay-us = <2>;	/* ~100 kHz */
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -244,8 +287,8 @@
 
 &pinctrl {
 	can1_pins: can1 {
-		pinmux = <RZG2L_PORT_PINMUX(8, 2, 5)>, /* TX */
-		<RZG2L_PORT_PINMUX(8, 3, 5)>; /* RX */
+		pinmux = <RZV2H_PORT_PINMUX(8, 2, 5)>, /* TX */
+		<RZV2H_PORT_PINMUX(8, 3, 5)>; /* RX */
 	};
 
 	scif_pins: scif {
@@ -253,125 +296,137 @@
 	};
 
 	sci0_pins: sci0 {
-		pinmux = <RZG2L_PORT_PINMUX(5, 0, 1)>, /* SCI0_TXD_MOSI_SDA */
-		<RZG2L_PORT_PINMUX(5, 1, 1)>; /* SCI0_RXD_MISO_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(5, 0, 1)>, /* SCI0_TXD_MOSI_SDA */
+		<RZV2H_PORT_PINMUX(5, 1, 1)>; /* SCI0_RXD_MISO_SCL */
 	};
 
 	// TODO: these are used to communicate with the ISPs
 
 	// sci4_pins: sci4 {
-	// 	pinmux = <RZG2L_PORT_PINMUX(8, 4, 6)>, /* SCI4_TXD_MOSI_SDA */
-	// 		 <RZG2L_PORT_PINMUX(8, 5, 6)>; /* SCI4_RXD_MISO_SCL */
+	// 	pinmux = <RZV2H_PORT_PINMUX(8, 4, 6)>, /* SCI4_TXD_MOSI_SDA */
+	// 		 <RZV2H_PORT_PINMUX(8, 5, 6)>; /* SCI4_RXD_MISO_SCL */
 	// };
 
 	// TODO: these are used to communicate with the IMU
 
 	// sci5_pins: sci5 {
-	// 	pinmux = <RZG2L_PORT_PINMUX(8, 6, 6)>, /* SCI5_TXD_MOSI_SDA */
-	// 		 <RZG2L_PORT_PINMUX(8, 7, 6)>; /* SCI5_RXD_MISO_SCL */
+	// 	pinmux = <RZV2H_PORT_PINMUX(8, 6, 6)>, /* SCI5_TXD_MOSI_SDA */
+	// 		 <RZV2H_PORT_PINMUX(8, 7, 6)>; /* SCI5_RXD_MISO_SCL */
 	// };
 
 	sd0_pwr_en {
 		gpio-hog;
-		gpios = <RZG2L_GPIO(10, 1) GPIO_ACTIVE_HIGH>;
+		gpios = <RZV2H_GPIO(A, 1) GPIO_ACTIVE_HIGH>;
 		output-high;
 		line-name = "sd0_pwr_en";
 	};
 
 	sd1_pwr_en {
 		gpio-hog;
-		gpios = <RZG2L_GPIO(10, 3) GPIO_ACTIVE_HIGH>;
+		gpios = <RZV2H_GPIO(A, 3) GPIO_ACTIVE_HIGH>;
 		output-high;
 		line-name = "sd1_pwr_en";
 	};
 
 	rs232_pwr_en {
+#if !I2C7_SEL
 		gpio-hog;
-		gpios = <RZG2L_GPIO(4, 7) GPIO_ACTIVE_LOW>;
+		gpios = <RZV2H_GPIO(4, 7) GPIO_ACTIVE_LOW>;
 		output-high;
 		line-name = "rs232_pwr_en";
+#endif
 	};
-
 	/* cam_pwr_en turns on 1.2V reg, 1.8V_CAM supply and 3.3V_CAM supply. */
 	/* Schematic on SOM shows this being PB2/CAM0&1_PWR but it's actually using */ 
 	/* P74. And you can trace this from the SOM to the SBC schematic */
 	cam_pwr_en {
 		gpio-hog;
-		gpios = <RZG2L_GPIO(7, 4) GPIO_ACTIVE_HIGH>;
+		gpios = <RZV2H_GPIO(7, 4) GPIO_ACTIVE_HIGH>;
 		output-high;
 		line-name = "cam_pwr_en";
 	};
 
 	fan_pwr_en {
 		gpio-hog;
-		gpios = <RZG2L_GPIO(10, 4) GPIO_ACTIVE_HIGH>;
+		gpios = <RZV2H_GPIO(A, 4) GPIO_ACTIVE_HIGH>;
 		output-high;
 		line-name = "fan_pwr_en";
 	};
 
 	i2c0_pins: i2c0 {
-		pinmux = <RZG2L_PORT_PINMUX(3, 0, 1)>, /* I2C0_SDA */
-		<RZG2L_PORT_PINMUX(3, 1, 1)>; /* I2C0_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(3, 0, 1)>, /* I2C0_SDA */
+		<RZV2H_PORT_PINMUX(3, 1, 1)>; /* I2C0_SCL */
 	};
 
 	i2c1_pins: i2c1 {
-		pinmux = <RZG2L_PORT_PINMUX(3, 2, 1)>, /* I2C1_SDA */
-		<RZG2L_PORT_PINMUX(3, 3, 1)>; /* I2C1_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(3, 2, 1)>, /* I2C1_SDA */
+		<RZV2H_PORT_PINMUX(3, 3, 1)>; /* I2C1_SCL */
 	};
 
 	i2c2_pins: i2c2 {
-		pinmux = <RZG2L_PORT_PINMUX(3, 4, 1)>, /* I2C2_SDA */
-		<RZG2L_PORT_PINMUX(3, 5, 1)>; /* I2C2_SCL */
+#if (!I3C_SEL)
+		pinmux = <RZV2H_PORT_PINMUX(3, 4, 1)>, /* I2C2_SDA */
+			 <RZV2H_PORT_PINMUX(3, 5, 1)>; /* I2C2_SCL */
+#endif
 	};
 
 	i2c3_pins: i2c3 {
-		pinmux = <RZG2L_PORT_PINMUX(3, 6, 1)>, /* I2C3_SDA */
-		<RZG2L_PORT_PINMUX(3, 7, 1)>; /* I2C3_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(3, 6, 1)>, /* I2C3_SDA */
+			 <RZV2H_PORT_PINMUX(3, 7, 1)>; /* I2C3_SCL */
 	};
 
 	i2c5_pins: i2c5 {
-		pinmux = <RZG2L_PORT_PINMUX(4, 2, 1)>, /* I2C5_SDA */
-		<RZG2L_PORT_PINMUX(4, 3, 1)>; /* I2C5_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(4, 2, 1)>, /* I2C5_SDA */
+		<RZV2H_PORT_PINMUX(4, 3, 1)>; /* I2C5_SCL */
 	};
 
 	i2c6_pins: i2c6 {
-		pinmux = <RZG2L_PORT_PINMUX(4, 4, 1)>, /* I2C6_SDA */
-		<RZG2L_PORT_PINMUX(4, 5, 1)>; /* I2C6_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(4, 4, 1)>, /* I2C6_SDA */
+			 <RZV2H_PORT_PINMUX(4, 5, 1)>; /* I2C6_SCL */
 	};
 
+#if I2C7_SEL
+	i2c7_pins: i2c7 {
+		pinmux = <RZV2H_PORT_PINMUX(4, 6, 1)>, /* I2C7_SDA */
+			 <RZV2H_PORT_PINMUX(4, 7, 1)>; /* I2C7_SCL */
+	};
+#endif
+
 	i2c8_pins: i2c8 {
-		pinmux = <RZG2L_PORT_PINMUX(0, 6, 1)>, /* I2C8_SDA */
-		<RZG2L_PORT_PINMUX(0, 7, 1)>; /* I2C8_SCL */
+		pinmux = <RZV2H_PORT_PINMUX(0, 6, 1)>, /* I2C8_SDA */
+			 <RZV2H_PORT_PINMUX(0, 7, 1)>; /* I2C8_SCL */
 	};
 
 	usb30_pins: usb30 {
-		pinmux = <RZG2L_PORT_PINMUX(6, 0, 14)>; /* VBUS */
+		pinmux = <RZV2H_PORT_PINMUX(6, 0, 14)>; /* VBUS */
 	};
 
 	usb31_pins: usb31 {
-		pinmux = <RZG2L_PORT_PINMUX(6, 2, 14)>; /* VBUS */
+		pinmux = <RZV2H_PORT_PINMUX(6, 2, 14)>; /* VBUS */
 	};
 
 	usb20_pins: usb20 {
-		pinmux = <RZG2L_PORT_PINMUX(9, 5, 14)>, /* VBUS */
-		<RZG2L_PORT_PINMUX(9, 6, 14)>; /* OVC */
+		pinmux = <RZV2H_PORT_PINMUX(9, 5, 14)>, /* VBUS */
+		<RZV2H_PORT_PINMUX(9, 6, 14)>; /* OVC */
 	};
 
 	usb21_pins: usb21 {
-		pinmux = <RZG2L_PORT_PINMUX(6, 6, 14)>, /* VBUS */
-		<RZG2L_PORT_PINMUX(6, 7, 14)>; /* OVC */
+		pinmux = <RZV2H_PORT_PINMUX(6, 6, 14)>, /* VBUS */
+		<RZV2H_PORT_PINMUX(6, 7, 14)>; /* OVC */
 	};
 
 	i3c_pins: i3c {
-		pinmux = <RZG2L_PORT_PINMUX(2, 0,0 )>, /* GPIO */
-		<RZG2L_PORT_PINMUX(2, 1,0)>; /* GPIO0 */
+#if (I3C_SEL)
+		pinmux = <RZV2H_PORT_PINMUX(2, 0, 1)>, /* I3C_SDA */
+			 <RZV2H_PORT_PINMUX(2, 1, 1)>; /* I3C_SCL */
+#endif
 	};
 
 	// spi2_pins: spi2 {
-	// 	pinmux = <RZG2L_PORT_PINMUX(11, 3, 5)>, /* MISO */
-	// 		 <RZG2L_PORT_PINMUX(11, 4, 5)>, /* MOSI */
-	// 		 <RZG2L_PORT_PINMUX(10, 7, 5)>, /* SSL */
-	// 		 <RZG2L_PORT_PINMUX(11, 5, 5)>; /* RSPCK */
+	// 	pinmux = <RZV2H_PORT_PINMUX(B, 3, 5)>, /* MISO */
+	// 		 <RZV2H_PORT_PINMUX(B, 4, 5)>, /* MOSI */
+	// 		 <RZV2H_PORT_PINMUX(A, 7, 5)>, /* SSL */
+	// 		 <RZV2H_PORT_PINMUX(B, 5, 5)>; /* RSPCK */
 	// };
 
 	// TODO: Chat with Arnon
@@ -381,38 +436,38 @@
 	// Slave Select pin when using SPI as it will be toggled
 	// by the HW regardless.
 	// spi4_pins: spi4 {
-	// 	pinmux = <RZG2L_PORT_PINMUX(8,  5, 6)>, /* MISO */
-	// 		 <RZG2L_PORT_PINMUX(8,  4, 6)>, /* MOSI */
-	// 		 <RZG2L_PORT_PINMUX(6,  4, 0)>, /* SSL */
-	// 		 <RZG2L_PORT_PINMUX(8,  0, 1)>; /* RSPCK */
+	// 	pinmux = <RZV2H_PORT_PINMUX(8,  5, 6)>, /* MISO */
+	// 		 <RZV2H_PORT_PINMUX(8,  4, 6)>, /* MOSI */
+	// 		 <RZV2H_PORT_PINMUX(6,  4, 0)>, /* SSL */
+	// 		 <RZV2H_PORT_PINMUX(8,  0, 1)>; /* RSPCK */
 	// };
 
 	sound_pins: sound {
-		pinmux = <RZG2L_PORT_PINMUX(1, 2, 7)>, /* SSI3_SCK */
-		<RZG2L_PORT_PINMUX(1, 3, 7)>, /* SSI3_WS */
-		<RZG2L_PORT_PINMUX(0, 4, 7)>, /* SSI3_SDATA */
-		<RZG2L_PORT_PINMUX(1, 5, 7)>; /* SSI4_SDATA */
+		pinmux = <RZV2H_PORT_PINMUX(1, 2, 7)>, /* SSI3_SCK */
+		<RZV2H_PORT_PINMUX(1, 3, 7)>, /* SSI3_WS */
+		<RZV2H_PORT_PINMUX(0, 4, 7)>, /* SSI3_SDATA */
+		<RZV2H_PORT_PINMUX(1, 5, 7)>; /* SSI4_SDATA */
 	};
 
 	wifi_sdio_pins: wifi {
 		wifi_sdio_data_pins {
-		pinmux = <RZG2L_PORT_PINMUX(11, 1, 1)>, //SD2DAT0
-			<RZG2L_PORT_PINMUX(11, 2, 1)>, //SD2DAT1
-			<RZG2L_PORT_PINMUX(11, 3, 1)>, //SD2DAT2
-			<RZG2L_PORT_PINMUX(11, 4, 1)>, //SD2DAT3
-			<RZG2L_PORT_PINMUX(11, 5, 1)>; //SD2CMD
+		pinmux = <RZV2H_PORT_PINMUX(B, 1, 1)>, //SD2DAT0
+			<RZV2H_PORT_PINMUX(B, 2, 1)>, //SD2DAT1
+			<RZV2H_PORT_PINMUX(B, 3, 1)>, //SD2DAT2
+			<RZV2H_PORT_PINMUX(B, 4, 1)>, //SD2DAT3
+			<RZV2H_PORT_PINMUX(B, 5, 1)>; //SD2CMD
 		};
 
 		wifi_sdio_clk_pin {
-		pinmux = <RZG2L_PORT_PINMUX(11, 0, 1)>; //SD2CLK
+		pinmux = <RZV2H_PORT_PINMUX(B, 0, 1)>; //SD2CLK
 		};
 	};
 
 	bluetooth_pins: bluetooth {
-		pinmux = <RZG2L_PORT_PINMUX(5, 4, 1)>, //SCI2_TXD_MOSI_SDA
-		<RZG2L_PORT_PINMUX(5, 5, 1)>, //SCI2_RXD_MISO_SCL
-		<RZG2L_PORT_PINMUX(5, 6, 4)>, //SCI2_CTS
-		<RZG2L_PORT_PINMUX(5, 7, 2)>; //SCI2_CTS_RTS	
+		pinmux = <RZV2H_PORT_PINMUX(5, 4, 1)>, //SCI2_TXD_MOSI_SDA
+		<RZV2H_PORT_PINMUX(5, 5, 1)>, //SCI2_RXD_MISO_SCL
+		<RZV2H_PORT_PINMUX(5, 6, 4)>, //SCI2_CTS
+		<RZV2H_PORT_PINMUX(5, 7, 2)>; //SCI2_CTS_RTS	
 	};
 };
 
@@ -470,7 +525,7 @@
 	bus-width = <4>;
 	sd-uhs-sdr50;
 	sd-uhs-sdr104;
-	cd-gpios = <&pinctrl RZG2L_GPIO(9, 4) GPIO_ACTIVE_HIGH>;	
+	cd-gpios = <&pinctrl RZV2H_GPIO(9, 4) GPIO_ACTIVE_HIGH>;	
 	status = "okay";
 };
 
@@ -682,7 +737,7 @@
 
 	status = "okay";
 
-	cam_gpio: gpio@20 {
+	cam_gpio: gpio@20 { 
 		compatible = "nxp,pcal6416";
 		reg = <0x20>;
 		gpio-controller;
@@ -697,8 +752,8 @@
 		"ISP_CAM_TRIG", 
 		"CCM_TRIG", 
 		"nAUDIO_RESET_1V8",
-		"ISP_CCM1_RST", 
-		"ISP_CCM2_RST", 
+		"ISP_CCM1_RST", 				// CSI0 reset
+		"ISP_CCM2_RST", 				// CSI1 reset
 		"CCM1_RST", 
 		"CCM2_RST",
 		"USB2_SEL", 
@@ -708,12 +763,12 @@
 
 		// TODO: define GPIO hogs and Interrupt GPIO
 		// interrupt-parent = <&pinctrl>;
-		// interrupts = <RZG2L_GPIO(8, 7) IRQ_TYPE_LEVEL_LOW>;
-		isp-stby-hog {
-		gpio-hog;
-		gpios = <4 GPIO_ACTIVE_HIGH>;
-		output-low;
-		};
+		// interrupts = <RZV2H_GPIO(8, 7) IRQ_TYPE_LEVEL_LOW>;
+		//isp-stby-hog {
+		//	gpio-hog;
+		//	gpios = <4 GPIO_ACTIVE_HIGH>;
+		//	output-low;
+		//};
 
 		// TODO - Expose ISP_CAM_TRIG?
 	};
@@ -744,7 +799,7 @@
 		
 		// TODO: define GPIO hogs and Interrupt GPIO
 		// interrupt-parent = <&pinctrl>;
-		// interrupts = <RZG2L_GPIO(9, 7) IRQ_TYPE_LEVEL_LOW>;
+		// interrupts = <RZV2H_GPIO(9, 7) IRQ_TYPE_LEVEL_LOW>;
 	};
 
 	// TODO: 9FGV0241 (https://lore.kernel.org/all/20220219015003.507601-2-marex@denx.de/T/)
@@ -771,61 +826,59 @@
 &i2c5 {
 	pinctrl-0 = <&i2c5_pins>;
 	pinctrl-names = "default";
-
+	clock-frequency = <400000>;
 	status = "okay";
 
-	// TODO: AR0521 camera to CSI3
+	ar1335_csi23: camera@36 {
+		compatible = "onsemi,ar1335";
+		reg = <0x36>;
+		clocks = <&clk_ext_camera>;
+		clock-names = "extclk";
 
-	// ov5645_csi23: ov5645_csi23@3c {
-	// 	compatible = "ovti,ov5645";
-	// 	reg = <0x3c>;
-	// 	clock-names = "xclk";
-	// 	clocks = <&clk_ext_camera>;
-	// 	clock-frequency = <24000000>;
-	// 	vdddo-supply = <&ov5645_vdddo_1v8>;
-	// 	vdda-supply = <&ov5645_vdda_2v8>;
-	// 	vddd-supply = <&ov5645_vddd_1v5>;
-	// 	enable-gpios = <&pinctrl RZG2L_GPIO(6, 0) GPIO_ACTIVE_HIGH>;
-	// 	reset-gpios = <&pinctrl RZG2L_GPIO(9, 3) GPIO_ACTIVE_LOW>;
+		vdd_io-supply = <&reg_1p8v>;
+		vaa-supply = <&reg_2p8v>;
+		vdd-supply = <&reg_1p5v>;
 
-	// 	port {
-	// 		ov5645_to_csi23: endpoint {
-	// 			clock-lanes = <0>;
-	// 			data-lanes = <1 2>;
-	// 			remote-endpoint = <&csi23_in>;
-	// 		};
-	// 	};
-	// };
+		reset-gpios = <&cam_gpio 11 GPIO_ACTIVE_LOW>;   /* CCM2_RST */
+		power-gpios = <&cam_gpio 3 GPIO_ACTIVE_LOW>;    /* CCM2_PWR_DIS */
+
+		port {
+			ar1335_to_csi23: endpoint {
+				clock-lanes = <0>;
+				data-lanes  = <1 2 3 4>;
+				remote-endpoint = <&csi23_in>;
+			};
+		};
+	};
 };
 
 &i2c6 {
 	pinctrl-0 = <&i2c6_pins>;
 	pinctrl-names = "default";
-
+	clock-frequency = <400000>;
 	status = "okay";
 
-	// TODO: AR0521 camera to CSI2
+	ar1335_csi22: camera@36 {
+		compatible = "onsemi,ar1335";
+		reg = <0x36>;
+		clocks = <&clk_ext_camera>;
+		clock-names = "extclk";
 
-	// ov5645_csi22: ov5645_csi22@3c {
-	// 	compatible = "ovti,ov5645";
-	// 	reg = <0x3c>;
-	// 	clock-names = "xclk";
-	// 	clocks = <&clk_ext_camera>;
-	// 	clock-frequency = <24000000>;
-	// 	vdddo-supply = <&ov5645_vdddo_1v8>;
-	// 	vdda-supply = <&ov5645_vdda_2v8>;
-	// 	vddd-supply = <&ov5645_vddd_1v5>;
-	// 	enable-gpios = <&pinctrl RZG2L_GPIO(6, 1) GPIO_ACTIVE_HIGH>;
-	// 	reset-gpios = <&pinctrl RZG2L_GPIO(9, 2) GPIO_ACTIVE_LOW>;
+		vdd_io-supply = <&reg_1p8v>;
+		vaa-supply = <&reg_2p8v>;
+		vdd-supply = <&reg_1p5v>;
 
-	// 	port {
-	// 		ov5645_to_csi22: endpoint {
-	// 			clock-lanes = <0>;
-	// 			data-lanes = <1 2>;
-	// 			remote-endpoint = <&csi22_in>;
-	// 		};
-	// 	};
-	// };
+		reset-gpios = <&cam_gpio 10 GPIO_ACTIVE_LOW>;   /* CCM1_RST */
+		power-gpios = <&cam_gpio 2 GPIO_ACTIVE_LOW>;    /* CCM1_PWR_DIS */
+
+		port {
+			ar1335_to_csi22: endpoint {
+				clock-lanes = <0>;
+				data-lanes  = <1 2 3 4>;
+				remote-endpoint = <&csi22_in>;
+			};
+		};
+	};
 };
 
 &du {
@@ -881,6 +934,69 @@
 	};
 };
 
+&csi22 {
+	status = "okay";
+
+	ports {
+		port@0 {
+			csi22_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes  = <1 2 3 4>;
+				remote-endpoint = <&ar1335_to_csi22>;
+			};
+		};
+
+		port@1 {
+			csi22_out: endpoint {
+				remote-endpoint = <&cru22_in>;
+			};
+		};
+	};
+};
+
+&csi23 {
+	status = "okay";
+
+	ports {
+		port@0 {
+			csi23_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes  = <1 2 3 4>;
+				remote-endpoint = <&ar1335_to_csi23>;
+			};
+		};
+
+		port@1 {
+			csi23_out: endpoint {
+				remote-endpoint = <&cru23_in>;
+			};
+		};
+	};
+};
+
+&cru2 {
+	status = "okay";
+
+	ports {
+		port@0 {
+			cru22_in: endpoint {
+				remote-endpoint = <&csi22_out>;
+			};
+		};
+	};
+};
+
+&cru3 {
+	status = "okay";
+
+	ports {
+		port@0 {
+			cru23_in: endpoint {
+				remote-endpoint = <&csi23_out>;
+			};
+		};
+	};
+};
 
 &xhci0 {
 	pinctrl-0 = <&usb30_pins>;
