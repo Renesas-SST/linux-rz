@@ -521,9 +521,10 @@ static int ar1335_set_fmt(struct v4l2_subdev *sd,
 	    format->format.code == MEDIA_BUS_FMT_SRGGB8_1X8) {
 		sensor->fmt.code = format->format.code;
 	} else {
-		dev_err(&client->dev, "%s %d format->format.code %d\n", __func__, __LINE__,
-			format->format.code);
-		return -EINVAL;
+		dev_err(&client->dev, "%s %d unsupported code %u\n",
+				__func__, __LINE__, format->format.code);
+		ret = -EINVAL;
+		goto unlock;
 	}
 
 	/*
@@ -531,8 +532,8 @@ static int ar1335_set_fmt(struct v4l2_subdev *sd,
 	 * to the minimum.
 	 */
 	 // Calculate vblank and hblank values
-    	int vblank = FRAME_LENGTH_LINE_MAX - fmt->height;
-    	int hblank = LINE_LENGTH_PCK_MAX - fmt->width;
+	int vblank = FRAME_LENGTH_LINE_MAX - fmt->height;
+	int hblank = LINE_LENGTH_PCK_MAX - fmt->width;
 	max_hblank = AR1335_TOTAL_WIDTH_MAX - sensor->fmt.width;
 	ret = __v4l2_ctrl_modify_range(sensor->ctrls.hblank,
 				       sensor->ctrls.hblank->minimum,
