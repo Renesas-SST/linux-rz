@@ -238,8 +238,7 @@
 
         label = "rcar-sound";
 
-        dais = <&rsnd_port0	/* HDMI0  */
-            >;
+        dais = <&rsnd_port0>;
     };
 };
 
@@ -641,6 +640,7 @@
         v1p2-supply = <&reg_1p8v>;
 
         adi,dsi-lanes = <4>;
+        #sound-dai-cells = <0>;
 
         ports {
             #address-cells = <1>;
@@ -786,7 +786,8 @@
 
     /* audio_clkout */
     #clock-cells = <0>;
-    clock-frequency = <11289600>;
+    /* use internal clock, see rsnd_adg_get_clkout() */
+    clock-frequency = <22579200 24576000>;
 
     /* Multi DAI */
     #sound-dai-cells = <1>;
