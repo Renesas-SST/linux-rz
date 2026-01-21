@@ -1,50 +1,101 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
+ * Device Tree Overlay for DA7219 Audio Codec on RZ/V2H RDK ver1
  * Copyright (C) 2025 Renesas Electronics Corporation
  */
-
 /dts-v1/;
 /plugin/;
 
 #include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 
-/ {
-    fragment@0 {
-        target = <&rcar_sound>;
-        __overlay__ {
-            pinctrl-0 = <&sound_pins>;
+&sound_card {
+    dais = <&rsnd_port0>;
+};
 
-            ports {
-                rsnd_port0: port@0 {
-                    rsnd_endpoint0: endpoint {
-                        remote-endpoint = <&da7219_endpoint>;
-                        mclk-fs = <256>;
-                    };
-                };
+&pinctrl {
+    sound_pins_codec: sound {
+        pinmux = <RZV2H_PORT_PINMUX(9, 5, 7)>,  /* SSI0_SCK */
+                 <RZV2H_PORT_PINMUX(9, 6, 7)>,  /* SSI0_WS */
+                 <RZV2H_PORT_PINMUX(9, 7, 7)>,  /* SSI0_SDATA */
+                 <RZV2H_PORT_PINMUX(A, 6, 7)>;  /* SSI9_SDATA */
+    };
+};
+
+&i2c3 {
+    adv7535: hdmi@3d {
+        ports {
+            port@2 { status = "disabled"; };
+        };
+    };
+};
+
+&rsci_i2c7 {
+    status = "okay";
+
+    da7219: da7219@1a {
+        compatible = "dlg,da7219";
+        #sound-dai-cells = <0>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        reg = <0x1a>;
+
+        dlg,micbias-lvl = <2600>;
+        dlg,mic-amp-in-sel = "diff";
+        VDD-supply = <&reg_1p8v>;
+        VDDMIC-supply = <&reg_3p3v>;
+        VDDIO-supply = <&reg_3p3v>;
+        clock-names = "mclk";
+        status = "okay";
+
+        interrupt-parent = <&pinctrl>;
+        interrupts = <RZV2H_GPIO(5, 1) IRQ_TYPE_LEVEL_LOW>;
+
+        da7219_aad {
+            dlg,btn-avg = <4>;
+            dlg,adc-1bit-rpt = <1>;
+            dlg,btn-cfg = <50>;
+            dlg,mic-det-thr = <500>;
+            dlg,jack-ins-deb = <20>;
+            dlg,jack-det-rate = "32_64";
+            dlg,jack-rem-deb = <1>;
+            dlg,a-d-btn-thr = <0xa>;
+            dlg,d-b-btn-thr = <0x16>;
+            dlg,b-c-btn-thr = <0x21>;
+            dlg,c-mic-btn-thr = <0x3E>;
+        };
+
+        port {
+            da7219_endpoint: endpoint {
+                remote-endpoint = <&rsnd_endpoint0>;
             };
         };
     };
+};
 
-    fragment@1 {
-        target = <&adv7535>;
-        __overlay__ {
-            status = "disabled";
-        };
-    };
+&rcar_sound {
+    pinctrl-0 = <&sound_pins_codec>;
 
-    fragment@2 {
-        target = <&rsci_i2c7>;
-        __overlay__ {
-            da7219: da7219@1a {
-                #address-cells = <1>;
-                #size-cells = <0>;
+    ports {
+        /* Add DA7219 port */
+        rsnd_port0: port@0 {
+            reg = <0>;
+            rsnd_endpoint0: endpoint {
+                remote-endpoint = <&da7219_endpoint>;
 
-                port {
-                    da7219_endpoint: endpoint {
-                        remote-endpoint = <&rsnd_endpoint0>;
-                    };
-                };
+                dai-format = "i2s";
+                bitclock-master = <&rsnd_endpoint0>;
+                frame-master = <&rsnd_endpoint0>;
+                mclk-fs = <256>;
+
+                playback = <&ssi0>;
+                capture = <&ssi9>;
             };
         };
     };
+};
+
+&ssi9 {
+    shared-pin;
 };

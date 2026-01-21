@@ -237,7 +237,6 @@
         compatible = "audio-graph-card";
 
         label = "rcar-sound";
-
         dais = <&rsnd_port0>;
     };
 };
@@ -334,12 +333,6 @@
         pinmux = <RZV2H_PORT_PINMUX(4, 0, 7)>, /* SSI0_SCK */
              <RZV2H_PORT_PINMUX(4, 1, 7)>,     /* SSI0_WS */
              <RZV2H_PORT_PINMUX(4, 2, 7)>;     /* SSI0_SDATA */
-    };
-
-    sound_pins: sound {
-        pinmux = <RZV2H_PORT_PINMUX(9, 5, 7)>, /* SSI0_SCK */
-            <RZV2H_PORT_PINMUX(9, 6, 7)>,     /* SSI0_WS */
-            <RZV2H_PORT_PINMUX(9, 7, 7)>;     /* SSI0_SDATA */
     };
 };
 
@@ -468,42 +461,10 @@
 &rsci_i2c7 {
     pinctrl-0 = <&rsci_i2c7_pins>;
     pinctrl-names = "default";
-	#address-cells = <1>;
-	#size-cells = <0>;
+    #address-cells = <1>;
+    #size-cells = <0>;
 
-    status = "okay";
-
-    da7219: da7219@1a {
-        compatible = "dlg,da7219";
-
-        #sound-dai-cells = <0>;
-        #address-cells = <1>;
-        #size-cells = <0>;
-        reg = <0x1a>;
-
-        dlg,micbias-lvl = <2600>;
-        dlg,mic-amp-in-sel = "diff";
-
-        status = "okay";
-
-        interrupt-parent = <&pinctrl>;
-        interrupts = <RZV2H_GPIO(5, 1) IRQ_TYPE_LEVEL_LOW>;
-
-        da7219_aad {
-            dlg,adc-1bit-rpt = <1>;
-            dlg,btn-avg = <4>;
-            dlg,btn-cfg = <50>;
-            dlg,mic-det-thr = <500>;
-            dlg,jack-ins-deb = <20>;
-            dlg,jack-det-rate = "32_64";
-            dlg,jack-rem-deb = <1>;
-
-            dlg,a-d-btn-thr = <0xa>;
-            dlg,d-b-btn-thr = <0x16>;
-            dlg,b-c-btn-thr = <0x21>;
-            dlg,c-mic-btn-thr = <0x3E>;
-        };
-    };
+    status = "disabled";
 };
 
 &rspi0 {
@@ -796,6 +757,7 @@
         #address-cells = <1>;
         #size-cells = <0>;
 
+        /* HDMI audio */
         rsnd_port0: port@0 {
             reg = <0>;
             rsnd_endpoint0: endpoint {
