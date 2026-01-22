@@ -115,12 +115,12 @@ static const char fmac_ethtool_string_stats_v6[][ETH_GSTRING_LEN] = {
 static const char fmac_ethtool_string_stats_v10[][ETH_GSTRING_LEN] = {
 	"txframe", "txbyte", "txretrans", "txerror", "txctl", "txprshort",
 	"txserr", "txnobuf", "txnoassoc", "txrunt",
-	"txchit", "txcmiss", "txphyerr", "txphycrs", "rxframe", "rxbyte",
+	"txchit", "txcmiss", "txuflo", "txphyerr", "txphycrs", "rxframe", "rxbyte",
 	"rxerror", "rxctl", "rxnobuf", "rxnondata",
 	"rxbadds", "rxbadcm", "rxfragerr", "rxrunt", "rxgiant", "rxnoscb",
-	"rxbadprot", "rxbadsrcma", "rxbadda", "rxfilter",
+	"rxbadproto", "rxbadsrcmac", "rxbadda", "rxfilter",
 	"rxoflo", "rxuflo[0]", "rxuflo[1]", "rxuflo[2]", "rxuflo[3]",
-	"rxuflo[4]", "rxuflo[5]", "d11cnt_rxcrc_off", "d11cnt_txnocts_off",
+	"rxuflo[4]", "rxuflo[5]", "d11cnt_txrts_off", "d11cnt_rxcrc_off", "d11cnt_txnocts_off",
 	"dmade", "dmada", "dmape", "reset", "tbtt", "txdmawar",
 	"pkt_callback_reg_fail", "txallfrm", "txrtsfrm", "txctsfrm",
 	"txackfrm", "txdnlfrm", "txbcnfrm", "txfunfl[0]", "txfunfl[1]",
@@ -138,19 +138,20 @@ static const char fmac_ethtool_string_stats_v10[][ETH_GSTRING_LEN] = {
 	"txretry", "txretrie", "rxdup", "txrts", "txnocts", "txnoack", "rxfrag", "rxmulti",
 	"rxcrc", "txfrmsnt", "rxundec", "tkipmicfaill", "tkipcntrmsr", "tkipreplay", "ccmpfmterr",
 	"ccmpreplay", "ccmpundec", "fourwayfail", "wepundec", "wepicverr", "decsuccess",
-	"tkipicverr", "wepexcluded", "psmwds", "phywatchdog", "prq_entries_handled",
+	"tkipicverr", "wepexcluded", "txchanrej", "psmwds", "phywatchdog", "prq_entries_handled",
 	"prq_undirected_entries", "prq_bad_entries", "atim_suppress_count",
 	"bcn_template_not_ready", "bcn_template_not_ready_done", "late_tbtt_dpc",
 	"rx1mbps", "rx2mbps", "rx5mbps5", "rx6mbps", "rx9mbps", "rx11mbps", "rx12mbps", "rx18mbps",
-	"rx24mbps", "rx36mbps", "rx48mbps", "rx54mbps", "rx108mbps", "rx162mbps",
-	"rx216mbps", "rx270mbps", "rx324mbps", "rx378mbps", "rx432mbps", "rx486mbps", "rx540mbps",
-	"pktengrxducast", "pktengrxdmcast", "bphy_rxcrsglitch", "bphy_b", "txexptime",
-	"rxmpdu_sgi", "txmpdu_stbc", "rxmpdu_stbc", "tkipmicfaill_mcst", "tkipcntrmsr_mcst",
-	"tkipreplay_mcst", "ccmpfmterr_mcst", "ccmpreplay_mcst", "ccmpundec_mcst",
-	"fourwayfail_mcst", "wepundec_mcst", "wepicverr_mcst", "decsuccess_mcst",
-	"tkipicverr_mcst", "wepexcluded_mcst", "reinit", "pstatxnoassoc",
-	"pstarxucast", "pstarxbcmc", "pstatxbcmc", "cso_normal", "chained",
-	"chainedsz1", "unchained", "maxchainsz", "currchainsz", "rxdrop20s",
+	"rx24mbps", "rx36mbps", "rx48mbps", "rx54mbps", "rx108mbps", "rx162mbps", "rx216mbps",
+	"rx270mbps", "rx324mbps", "rx378mbps", "rx432mbps", "rx486mbps", "rx540mbps",
+	"pktengrxducast", "pktengrxdmcast", "rfdisable", "bphy_rxcrsglitch", "bphy_badplcp",
+	"txexptime", "txmpdu_sgi", "rxmpdu_sgi", "txmpdu_stbc", "rxmpdu_stbc", "rxundec_mcst",
+	"tkipmicfaill_mcst", "tkipcntrmsr_mcst", "tkipreplay_mcst", "ccmpfmterr_mcst",
+	"ccmpreplay_mcst", "ccmpundec_mcst", "fourwayfail_mcst", "wepundec_mcst", "wepicverr_mcst",
+	"decsuccess_mcst", "tkipicverr_mcst", "wepexcluded_mcst", "dma_hang", "reinit",
+	"pstatxucast", "pstatxnoassoc", "pstarxucast", "pstarxbcmc", "pstatxbcmc",
+	"cso_passthrough", "cso_normal", "chained", "chainedsz1",
+	"unchained", "maxchainsz", "currchainsz", "rxdrop20s",
 	"pciereset", "cfgrestore", "reinitreason[0]", "reinitreason[1]",
 	"reinitreason[2]", "reinitreason[3]", "reinitreason[4]",
 	"reinitreason[5]", "reinitreason[6]", "reinitreason[7]", "rxrtry",
@@ -895,7 +896,7 @@ static void brcmf_et_get_stats(struct net_device *netdev,
 		xTLV_wl_cnt_offset = brcmf_find_wlc_cntr_tlv(src, &len);
 		len = (len / sizeof(u32));
 	} else {
-		len = (len / sizeof(u32)) - sizeof(u32);
+		len = (len - sizeof(u32)) / sizeof(u32);
 	}
 
 	src = src + soffset + xTLV_wl_cnt_offset;
