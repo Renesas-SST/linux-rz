@@ -1400,7 +1400,7 @@ static int aic3x_set_power(struct snd_soc_component *component, int power)
 
 		if (aic3x->gpio_reset) {
 			udelay(1);
-			gpio_set_value_cansleep(aic3x->gpio_reset, 0);
+			gpiod_set_value_cansleep(aic3x->gpio_reset, 0);
 		}
 
 		if (aic3x->model == AIC3X_MODEL_3007)
@@ -1840,7 +1840,7 @@ void aic3x_remove(struct device *dev)
 
 	/* Leave the codec in reset state */
 	if (aic3x->gpio_reset && !aic3x->shared_reset)
-		gpio_set_value_cansleep(aic3x->gpio_reset, 1);
+		gpiod_set_value_cansleep(aic3x->gpio_reset, 1);
 }
 EXPORT_SYMBOL(aic3x_remove);
 
