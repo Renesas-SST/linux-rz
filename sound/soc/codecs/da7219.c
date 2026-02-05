@@ -2452,7 +2452,7 @@ static struct reg_sequence da7219_rev_aa_patch[] = {
 };
 
 static struct reg_sequence da7219_mic_enable_patch[] = {
-	{ DA7219_PLL_CTRL, 0x08 },
+	{ DA7219_PLL_CTRL, 0x88 },
 	{ DA7219_DAI_TDM_CTRL, 0x40 },
 	{ DA7219_MIXIN_L_GAIN, 0x0B },
 	{ DA7219_ADC_L_GAIN, 0x5F },
