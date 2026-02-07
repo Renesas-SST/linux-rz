@@ -132,6 +132,9 @@ dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-sbc.dtb
 DTC_FLAGS_rzv2l-evk += -@
 dtb-$(CONFIG_ARCH_R9A07G054) += rzv2l-evk.dtb
 
+DTC_FLAGS_rs-g2l100 += -@
+dtb-$(CONFIG_ARCH_R9A07G054) += rs-g2l100.dtb
+
 dtb-$(CONFIG_ARCH_R9A08G045) += r9a08g045s33-smarc.dtb
 
 dtb-$(CONFIG_ARCH_R9A09G011) += r9a09g011-v2mevk2.dtb
