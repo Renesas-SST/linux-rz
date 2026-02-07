@@ -147,13 +147,6 @@ static void pm_clk_op_unlock(struct pm_subsys_data *psd, unsigned long *flags)
 static inline void __pm_clk_enable(struct device *dev, struct pm_clock_entry *ce)
 {
 	int ret;
-	unsigned long rate = clk_get_rate(ce->clk);
-
-	if (!rate) {
-		dev_dbg(dev, "%s: clock %pC has 0 Hz rate, skipping enable\n",
-			__func__, ce->clk);
-		return;
-	}
 
 	switch (ce->status) {
 	case PCE_STATUS_ACQUIRED:
