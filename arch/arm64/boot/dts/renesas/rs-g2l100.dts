@@ -194,6 +194,10 @@
 
 /* Pinctrl Configuration - Grouped by Function */
 &pinctrl {
+    adc_pins: adc {
+        pinmux = <RZG2L_PORT_PINMUX(9, 0, 2)>; /* ADC_TRG */
+    };
+
     /* Serial Communication */
     scif0_pins: scif0 {
         pinmux = <RZG2L_PORT_PINMUX(38, 0, 1)>, /* TxD */
@@ -813,3 +817,14 @@
     non-removable;
     keep-power-in-suspend;
 };
+
+/* ADC */
+&adc {
+    pinctrl-0 = <&adc_pins>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    /delete-node/ channel@6;
+    /delete-node/ channel@7;
+};
+
