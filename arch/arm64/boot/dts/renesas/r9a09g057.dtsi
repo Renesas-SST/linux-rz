@@ -872,6 +872,7 @@
 			power-domains = <&cpg>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+			num-cs = <1>;
 			status = "disabled";
 		};
 
@@ -893,6 +894,7 @@
 			power-domains = <&cpg>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+			num-cs = <1>;
 			status = "disabled";
 		};
 
@@ -914,6 +916,9 @@
 			power-domains = <&cpg>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+			num-cs = <1>;
+			dmas = <&dmac1 0x7F4491>, <&dmac1 0x7F4490>;
+			dma-names = "tx", "rx";
 			status = "disabled";
 		};
 

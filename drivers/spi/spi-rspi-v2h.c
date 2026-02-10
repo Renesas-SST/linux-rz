@@ -891,6 +891,7 @@ static const struct spi_ops rspi_v2h_ops = {
 static const struct of_device_id rspi_of_match[] = {
 	/* RSPI on V2H */
 	{ .compatible = "renesas,rspi-v2h", .data = &rspi_v2h_ops },
+	{ .compatible = "renesas,r9a09g057-rspi", .data = &rspi_v2h_ops },
 	{ .compatible = "renesas,rspi-g3e", .data = &rspi_v2h_ops },
 	{ /* sentinel */ }
 };
@@ -1050,7 +1051,7 @@ static int rspi_probe(struct platform_device *pdev)
 		if (ret >= 0)
 			rspi->tx_irq = ret;
 
-		ret = platform_get_irq_byname(pdev, "cend");
+		ret = platform_get_irq_byname(pdev, "end");
 		if (ret < 0) {
 			dev_err(&pdev->dev, "Failed to get CEND IRQ\n");
 			return ret;
@@ -1066,7 +1067,7 @@ static int rspi_probe(struct platform_device *pdev)
 	} else {
 		/* Multi-interrupt mode, only SPRI, SPCEND and SPTI are used */
 		ret = rspi_request_irq(&pdev->dev, rspi->cend_irq, rspi_irq_cend,
-				"cend", rspi);
+				"end", rspi);
 		ret = rspi_request_irq(&pdev->dev, rspi->rx_irq, rspi_irq_rx,
 				"rx", rspi);
 		if (!ret)

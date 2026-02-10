@@ -427,7 +427,7 @@ static int rzv2h_rspi_probe(struct platform_device *pdev)
 		dev_err(dev, "register controller failed\n");
 		goto quit_resets;
 	}
-
+	dev_info(&pdev->dev, "probed\n");
 	return 0;
 
 quit_resets:
