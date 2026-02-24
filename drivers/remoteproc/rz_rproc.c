@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/remoteproc.h>
@@ -8,44 +9,36 @@
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
 #include <linux/pm_runtime.h>
-#include <linux/module.h>
 #include <linux/platform_device.h>
+
 #include "remoteproc_internal.h"
 
-#define CM33_SRAM_START	0x00000000
-#define CM33_SRAM_END		0x3FFFFFFF
-#define CM33_DDR_START		0x60000000
-#define CM33_DDR_END		0x7FFFFFFF
+#define CM33_SRAM_START	(0x00000000)
+#define CM33_SRAM_END		(0x3FFFFFFF)
+#define CM33_DDR_START		(0x80000000)
+#define CM33_DDR_END		(0x9FFFFFFF)
+#define CA55_SRAM_START	(0x00000000)
+#define CA55_DDR_START		(0x40000000)
+#define CA55_DDR_CM33_START	(0x40010000)
+#define CA55_DDR_CM33_END	(0x43EFFFFF)
+#define CM33_TO_CA55_MASK	(0x0FFFFFFF)
+#define CPG_CLKON_1_CLK2_ON_MASK	(0x00040000)
 
-#define CA55_SRAM_START		0x00000000
-#define CA55_DDR_START		0x40000000
-#define CA55_DDR_CM33_START	0x40010000
-#define CA55_DDR_CM33_END	0x43EFFFFF
+#define CPG_CLKON_1		(0x604)
+#define CPG_LP_CM33_CTL1	(0xC1C)
+#define CPG_CM33_CTL		(0xC0C)
+#define CPG_RST_1		(0x904)
+#define CPG_RSTMON_0		(0xA00)
+#define CPG_CLKMON_0		(0x800)
+#define SYS_MCPU_CFG2		(0x80C)
+#define SYS_MCPU_CFG3		(0x810)
 
-#define CM33_TO_CA55_MASK	0x0FFFFFFF
-#define CPG_CLKON_CM33_CLK0_ON_MASK	0x00000001
-
-#define CPG_SIPLL3_MON	0x13C	// PLL3 (SSCG) Monitor Register
-#define PLL3_RESET	BIT(0)	// SSCG PLL3 Operating mode monitoring
-#define CPG_CLKON_CM33	0x504	// Clock Control Register Cortex-M33
-#define CPG_CLKMON_CM33	0x684	// Clock Monitor Register Cortex-M33
-#define CPG_RST_CM33	0x804	// Reset Control Register Cortex-M33
-#define CPG_RSTMON_CM33	0x984	// Reset Monitor Register Cortex-M33
-
-#define SYS_CM33_CFG0	0x804	// CM33 Config Register0
-#define SYS_CM33_CFG1	0x808	// CM33 Config Register1
-#define SYS_CM33_CFG2	0x80C	// CM33 Config Register2
-#define SYS_CM33_CFG3	0x810	// CM33 Config Register3
-#define SYS_CM33_CTL	0x818	// CM33 Control Register
-#define SYS_LSI_MODE	0xA00	// LSI Mode Signal Register
-#define SYS_LP_CM33CTL1	0xD28	// Lowpower Sequence CM33 Control Register1
-
-#define RSC_TBL_SIZE	0x1000
+#define RSC_TBL_SIZE		(0x1000)
 
 struct rz_rproc_pdata {
-	struct reset_control *nporeset;
-	struct reset_control *nsysreset;
-	struct reset_control *miscresetn;
+	struct reset_control *cm33reset2;
+	struct reset_control *cm33reset0;
+	struct reset_control *cm33reset1;
 	struct regmap *cpg_regmap;
 	struct regmap *sysc_regmap;
 	u32 bootaddr[2];
@@ -56,9 +49,9 @@ static int rz_rproc_mem_alloc(struct rproc *rproc,
 {
 	struct device *dev = rproc->dev.parent;
 	void __iomem *va;
-
 	dev_dbg(dev, "map memory: %pa+%zx\n", &mem->dma, mem->len);
 	va = devm_ioremap_wc(dev, mem->dma, mem->len);
+
 	if (!va) {
 		dev_err(dev, "unable to map memory region: %pa+%zx\n",
 			&mem->dma, mem->len);
@@ -99,7 +92,7 @@ static int rz_rproc_prepare(struct rproc *rproc)
 	for (i = 0; i < pdev->num_resources; i++) {
 		res = pdev->resource + i;
 
-		/* No need to translate pa to da, RZ use same map */
+		/* No need to translate pa to da, RZ/G3S use same map */
 		da = res->start;
 
 		mem = rproc_mem_entry_init(dev, NULL,
@@ -126,7 +119,7 @@ static int rz_rproc_prepare(struct rproc *rproc)
 		if (rmem->base > U32_MAX)
 			return -EINVAL;
 
-		/* No need to translate pa to da, RZ use same map */
+		/* No need to translate pa to da, RZ/G3S use same map */
 		da = rmem->base;
 
 		/*  No need to map vdev buffer */
@@ -156,51 +149,79 @@ static int rz_rproc_prepare(struct rproc *rproc)
 
 static int rz_rproc_start(struct rproc *rproc)
 {
+	struct device *dev = rproc->dev.parent;
 	struct rz_rproc_pdata *pdata = rproc->priv;
-	uint32_t cpg_sipll3_mon_val;
-	uint32_t cpg_clkmon_cm33_val;
-	uint32_t cpg_rstmon_cm33_val;
+	uint32_t cpg_clkmon_0_val;
+	uint32_t cpg_rstmon_0_val;
 
-	/* Configure secure and non-secure SysTick based on SSL setting */
-	regmap_read(pdata->cpg_regmap, CPG_SIPLL3_MON, &cpg_sipll3_mon_val);
-	if ((cpg_sipll3_mon_val & PLL3_RESET) == 0x1) {
-		/* SSCG is enabled */
-		regmap_write(pdata->sysc_regmap, SYS_CM33_CFG0, 0x01003CE5);
-		regmap_write(pdata->sysc_regmap, SYS_CM33_CFG1, 0x01003CE5);
-	} else {
-		/* SSCG is disabled */
-		regmap_write(pdata->sysc_regmap, SYS_CM33_CFG0, 0x00003D08);
-		regmap_write(pdata->sysc_regmap, SYS_CM33_CFG1, 0x00003D08);
+	/* Check CM33 clock status*/
+	regmap_read(pdata->cpg_regmap, CPG_CLKMON_0, &cpg_clkmon_0_val);
+	if ((cpg_clkmon_0_val & CPG_CLKON_1_CLK2_ON_MASK) != 0) {
+		dev_warn(dev, "CM33 remoteproc is NOT supported because CM33 clock is already ON\n");
+		return 0;
 	}
 
-	/* Set CM33 secure and non-secure vectore address */
-	regmap_write(pdata->sysc_regmap, SYS_CM33_CFG2, pdata->bootaddr[0]);
-	regmap_write(pdata->sysc_regmap, SYS_CM33_CFG3, pdata->bootaddr[1]);
-
-	regmap_write(pdata->cpg_regmap, CPG_CLKON_CM33, 0x00010001);
+	/* Be sure that CM33 is now in the reset state */
+	regmap_write(pdata->cpg_regmap, CPG_RST_1, 0x00380000);
 
 	do
 	{
-		regmap_read(pdata->cpg_regmap, CPG_CLKMON_CM33, &cpg_clkmon_cm33_val);
-	} while ((cpg_clkmon_cm33_val & CPG_CLKON_CM33_CLK0_ON_MASK) == 0);
+		regmap_read(pdata->cpg_regmap, CPG_RSTMON_0, &cpg_rstmon_0_val);
+	} while ((cpg_rstmon_0_val & 0x000E0000) != 0x000E0000);
 
-	regmap_write(pdata->cpg_regmap, CPG_RST_CM33, 0x00040004);
-	regmap_write(pdata->cpg_regmap, CPG_RST_CM33, 0x00070007);
+	/* Set CM33 secure and non-secure vector address */
+	regmap_write(pdata->sysc_regmap, SYS_MCPU_CFG2, pdata->bootaddr[0]);
+	regmap_write(pdata->sysc_regmap, SYS_MCPU_CFG3, pdata->bootaddr[1]);
+
+	/* Set CM33 Clock to ON */
+	regmap_write(pdata->cpg_regmap, CPG_CLKON_1, 0x00040004);
 
 	do
 	{
-		regmap_read(pdata->cpg_regmap, CPG_RSTMON_CM33, &cpg_rstmon_cm33_val);
-	} while ((cpg_rstmon_cm33_val & 0x00000007) != 0);
+		regmap_read(pdata->cpg_regmap, CPG_CLKMON_0, &cpg_clkmon_0_val);
+	} while ((cpg_clkmon_0_val & CPG_CLKON_1_CLK2_ON_MASK) == 0);
+
+	/* Set QREQn signal to the CM33 debug domain and set CM33_LP_QCH12 to 1 */
+	regmap_write(pdata->cpg_regmap, CPG_LP_CM33_CTL1, 0x00003100);
+
+	/* Fetch disable when releasing the CM33 cold reset */
+	regmap_write(pdata->cpg_regmap, CPG_CM33_CTL, 0x00000001);
+
+	/* Releasing from the reset state */
+	regmap_write(pdata->cpg_regmap, CPG_RST_1, 0x00380008);
+
+	do
+	{
+		regmap_read(pdata->cpg_regmap, CPG_RSTMON_0, &cpg_rstmon_0_val);
+	} while ((cpg_rstmon_0_val & 0x000E0000) != 0x000C0000);
+
+	regmap_write(pdata->cpg_regmap, CPG_RST_1, 0x00380038);
+
+	do
+	{
+		regmap_read(pdata->cpg_regmap, CPG_RSTMON_0, &cpg_rstmon_0_val);
+	} while ((cpg_rstmon_0_val & 0x000E0000) != 0);
+
+	/* Fetch enable when releasing the CM33 cold reset */
+	regmap_write(pdata->cpg_regmap, CPG_CM33_CTL, 0x00000000);
 
 	return 0;
 }
 
 static int rz_rproc_stop(struct rproc *rproc)
 {
-	struct device *dev = rproc->dev.parent;
 	struct rz_rproc_pdata *pdata = rproc->priv;
 	struct rproc_mem_entry *carveout;
-	int ret;
+	uint32_t cpg_rstmon_0_val;
+	uint32_t cpg_clkmon_0_val;
+
+	/* Set CM33 Clock to OFF */
+	regmap_write(pdata->cpg_regmap, CPG_CLKON_1, 0x00040000);
+
+	do
+	{
+		regmap_read(pdata->cpg_regmap, CPG_CLKMON_0, &cpg_clkmon_0_val);
+	} while ((cpg_clkmon_0_val & CPG_CLKON_1_CLK2_ON_MASK) != 0);
 
 	/* Clear registered carveouts */
 	list_for_each_entry(carveout, &rproc->carveouts, node) {
@@ -210,25 +231,13 @@ static int rz_rproc_stop(struct rproc *rproc)
 		memset(carveout->va, 0, carveout->len);
 	}
 
-	ret = reset_control_assert(pdata->nporeset);
-	if (ret) {
-		dev_err(dev, "failed to assert nporeset\n");
-		return ret;
-	}
+	/* CM33 is now accessing the reset state */
+	regmap_write(pdata->cpg_regmap, CPG_RST_1, 0x00380000);
 
-	ret = reset_control_assert(pdata->nsysreset);
-	if (ret) {
-		dev_err(dev, "failed to assert nsysreset\n");
-		return ret;
-	}
-
-	ret = reset_control_assert(pdata->miscresetn);
-	if (ret) {
-		dev_err(dev, "failed to assert miscresetn\n");
-		return ret;
-	}
-
-	pm_runtime_put(dev);
+	do
+	{
+		regmap_read(pdata->cpg_regmap, CPG_RSTMON_0, &cpg_rstmon_0_val);
+	} while ((cpg_rstmon_0_val & 0x000E0000) != 0x000E0000);
 
 	return 0;
 }
@@ -337,7 +346,6 @@ static int rz_rproc_probe(struct platform_device *pdev)
 	struct device_node *np = dev->of_node;
 	struct rz_rproc_pdata *pdata;
 	struct rproc *rproc;
-	struct resource *res;
 	uint32_t val;
 	int ret;
 	int i;
@@ -350,15 +358,6 @@ static int rz_rproc_probe(struct platform_device *pdev)
 				 sizeof(*pdata));
 	if (!rproc)
 		return -ENOMEM;
-
-	for (i = 0; i < pdev->num_resources; i++) {
-		res = platform_get_resource(pdev, IORESOURCE_MEM, i);
-		if (!devm_request_mem_region(dev, res->start, resource_size(res),
-					     dev_name(dev))) {
-			dev_err(dev, "unable to request memory region\n");
-			return -EBUSY;
-		}
-	}
 
 	/* Get remgap of cpg and sysc */
 	pdata->cpg_regmap = syscon_regmap_lookup_by_phandle(np, "renesas,rz-cpg");
@@ -376,31 +375,31 @@ static int rz_rproc_probe(struct platform_device *pdev)
 	}
 
 	/* Obtain reference to reset controllers */
-	pdata->nporeset = devm_reset_control_get_exclusive(dev, "nporeset");
-	if (IS_ERR(pdata->nporeset)) {
-		ret = PTR_ERR(pdata->nporeset);
-		dev_err(dev, "failed to acquire nporeset\n");
+	pdata->cm33reset2 = devm_reset_control_get_exclusive(dev, "cm33reset2");
+	if (IS_ERR(pdata->cm33reset2)) {
+		ret = PTR_ERR(pdata->cm33reset2);
+		dev_err(dev, "failed to acquire cm33reset2\n");
 		return ret;
 	}
 
-	pdata->nsysreset = devm_reset_control_get_exclusive(dev, "nsysreset");
-	if (IS_ERR(pdata->nsysreset)) {
-		ret = PTR_ERR(pdata->nsysreset);
-		dev_err(dev, "failed to acquire nsysreset\n");
+	pdata->cm33reset0 = devm_reset_control_get_exclusive(dev, "cm33reset0");
+	if (IS_ERR(pdata->cm33reset0)) {
+		ret = PTR_ERR(pdata->cm33reset0);
+		dev_err(dev, "failed to acquire cm33reset0\n");
 		return ret;
 	}
 
-	pdata->miscresetn = devm_reset_control_get_exclusive(dev, "miscresetn");
-	if (IS_ERR(pdata->miscresetn)) {
-		ret = PTR_ERR(pdata->miscresetn);
-		dev_err(dev, "failed to acquire miscresetn\n");
+	pdata->cm33reset1 = devm_reset_control_get_exclusive(dev, "cm33reset1");
+	if (IS_ERR(pdata->cm33reset1)) {
+		ret = PTR_ERR(pdata->cm33reset1);
+		dev_err(dev, "failed to acquire cm33reset1\n");
 		return ret;
 	}
 
 	/* Get secure and non-secure vector address */
 	for (i = 0; i < 2; i++) {
 		if (of_property_read_u32_index(np, "renesas,rz-bootaddrs", i,
-					       &pdata->bootaddr[i])) {
+						       &pdata->bootaddr[i])) {
 			dev_err(dev, "invalid boot address\n");
 			return -EINVAL;
 		}
@@ -413,16 +412,17 @@ static int rz_rproc_probe(struct platform_device *pdev)
 	pm_runtime_enable(dev);
 
 	/* Check remote processor state */
-	regmap_read(pdata->cpg_regmap, CPG_RSTMON_CM33, &val);
-	if (!val) {
+	regmap_read(pdata->cpg_regmap, CPG_RSTMON_0, &val);
+
+	if (!(val & 0x000E0000)) {
 		/* Remote processor is already powered on */
-		rproc->state = RPROC_DETACHED;
-
-		pm_runtime_get_sync(dev);
-
 		struct resource_table *rsc_table = NULL;
 		uint32_t rsc_pa ;
 		void __iomem *rsc_va;
+
+		rproc->state = RPROC_DETACHED;
+
+		pm_runtime_get_sync(dev);
 
 		/* Get loaded rsc table */
 		if (of_property_read_u32_index(np, "renesas,rz-rsctbl", 0, &rsc_pa)) {
@@ -432,8 +432,8 @@ static int rz_rproc_probe(struct platform_device *pdev)
 
 		rsc_va = devm_ioremap_wc(dev, rsc_pa, RSC_TBL_SIZE);
 		if (!rsc_va) {
-			dev_err(dev, "unable to map memory region: %pa+%zx\n",
-				&rsc_pa, (size_t)RSC_TBL_SIZE);
+			dev_err(dev, "unable to map memory region: %pa+%d\n",
+				&rsc_pa, RSC_TBL_SIZE);
 			goto rproc_prepare;
 		}
 

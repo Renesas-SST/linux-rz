@@ -382,8 +382,8 @@ config RZ_REMOTEPROC
 	tristate "Renesas RZ remoteproc support"
 	select MFD_SYSCON
 	help
-	  Say y here to support RZ's remote processor (CM33) via the remote
-	  processor framework.
+	  Say y here to support RZ's remote processors (CM33)
+	  via the remote processor framework.
 
 endif # REMOTEPROC
 
