@@ -923,6 +923,8 @@ static const struct rzv2h_reset r9a09g057_resets[] __initconst = {
 	DEF_RST(15, 6, 7, 7),		/* ADC_ADRST_N */
 	DEF_RST(15, 7, 7, 8),		/* TSU0_PRESETN */
 	DEF_RST(15, 8, 7, 9),		/* TSU1_PRESETN */
+	DEF_RST(15, 12, 7, 13),		/* DRP0_ARESET */
+	DEF_RST(15, 13, 7, 14),		/* DRPAI0_ARESET */
 };
 
 const struct rzv2h_cpg_info r9a09g057_cpg_info  = {
