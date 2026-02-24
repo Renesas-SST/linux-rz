@@ -365,6 +365,13 @@ config XLNX_R5_REMOTEPROC
 
 	  It's safe to say N if not interested in using RPU r5f cores.
 
+config RZ_REMOTEPROC
+	tristate "Renesas RZ remoteproc support"
+	select MFD_SYSCON
+	help
+	  Say y here to support RZ/V2H's remote processors (CM33)
+	  via the remote processor framework.
+
 endif # REMOTEPROC
 
 endmenu
