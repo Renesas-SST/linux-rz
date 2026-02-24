@@ -1301,7 +1301,6 @@
  				 <&cpg CPG_MOD 241>,
  				 <&cpg CPG_MOD 242>;
  			clock-names = "gpu", "bus", "bus_ace";
-			power-domains = <&cpg>;
  			resets = <&cpg 221>,
  				 <&cpg 222>,
  				 <&cpg 223>;
