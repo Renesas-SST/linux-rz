@@ -774,7 +774,7 @@
 };
 
 &ostm0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &ostm1 {
