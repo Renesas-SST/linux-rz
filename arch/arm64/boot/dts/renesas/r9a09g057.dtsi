@@ -2871,6 +2871,19 @@
  			phy-names = "usb1";
  			status = "disabled";
  		};
+
+		drpai0: drpai@16800000 {
+			compatible = "renesas,rzv2h-drpai";
+			reg = <0 0x17000000 0 0x1000000>,
+				<0 0x16800000 0 0x400000>;
+			interrupts = <GIC_SPI 914 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 915 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 916 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 917 IRQ_TYPE_LEVEL_HIGH>;
+			resets = <&cpg 253>;
+			status = "disabled";
+		};
+
 		rcar_sound: sound@13c00000 {
 			/*
 			 * #sound-dai-cells is required
