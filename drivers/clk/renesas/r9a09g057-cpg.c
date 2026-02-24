@@ -68,6 +68,8 @@ enum clk_ids {
 	CLK_PLLDTY_ACPU_DIV4,
 	CLK_PLLDTY_RCPU,
 	CLK_PLLDTY_RCPU_DIV4,
+    CLK_PLLDTY_DRP,
+ 	CLK_PLLDTY_DRP_DIV2,
 	CLK_PLLVDO,
 	CLK_PLLVDO_CRU0,
 	CLK_PLLVDO_CRU1,
@@ -239,6 +241,9 @@ static const struct cpg_core_clk r9a09g057_core_clks[] __initconst = {
 	DEF_DDIV(".plldty_rcpu", CLK_PLLDTY_RCPU, CLK_PLLDTY,
 		CDDIVx_DIVCTLy(3, 2, 3), dtable_2_64),
 	DEF_FIXED(".plldty_rcpu_div4", CLK_PLLDTY_RCPU_DIV4, CLK_PLLDTY_RCPU, 1, 4),
+    DEF_DDIV(".plldty_drp", CLK_PLLDTY_DRP, CLK_PLLDTY,
+		CDDIVx_DIVCTLy(2, 2, 3), dtable_2_64),
+	DEF_FIXED(".plldty_drp_div2", CLK_PLLDTY_DRP_DIV2, CLK_PLLDTY_DRP, 1, 2),
 	DEF_DDIV(".pllvdo_cru0", CLK_PLLVDO_CRU0, CLK_PLLVDO,
 		CDDIVx_DIVCTLy(3, 3, 1), dtable_2_4),
 	DEF_DDIV(".pllvdo_cru1", CLK_PLLVDO_CRU1, CLK_PLLVDO,
@@ -475,6 +480,9 @@ static const struct rzv2h_mod_clk r9a09g057_mod_clks[] __initconst = {
 	DEF_MOD("adc_adclk",			CLK_PLLCM33_ADC_ADCLK, 16, 8, 8, 8),
 	DEF_MOD("tsu0_pclk",			CLK_QEXTAL, 16, 9, 8, 9),
 	DEF_MOD("tsu1_pclk",			CLK_QEXTAL, 16, 10, 8, 10),
+    DEF_MOD("drp_dclkin",       CLK_QEXTAL, 17, 0, 8, 16),
+    DEF_MOD("drp_aclk",         CLK_PLLDTY_DRP_DIV2, 17, 1, 8, 17),
+    DEF_MOD("drp_initclk",      CLK_QEXTAL, 17, 2, 8, 18),
 	DEF_MOD("ssi9_clk",			CLK_PLLCLN_DIV8, 24, 10, -1, -1),
 	DEF_MOD("ssi8_clk",			CLK_PLLCLN_DIV8, 24,  9, -1, -1),
 	DEF_MOD("ssi7_clk",			CLK_PLLCLN_DIV8, 24,  8, -1, -1),
@@ -646,6 +654,7 @@ static const struct rzv2h_reset r9a09g057_resets[] __initconst = {
 	DEF_RST(15, 6, 7, 7),		/* ADC_ADRST_N */
 	DEF_RST(15, 7, 7, 8),		/* TSU0_PRESETN */
 	DEF_RST(15, 8, 7, 9),		/* TSU1_PRESETN */
+	DEF_RST(15, 12, 7, 13),     /* DRP0_ARESETN */
 };
 
 const struct rzv2h_cpg_info r9a09g057_cpg_info __initconst = {
