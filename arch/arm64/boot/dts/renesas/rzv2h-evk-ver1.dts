@@ -10,6 +10,7 @@
 #include <dt-bindings/pinctrl/renesas,r9a09g057-pinctrl.h>
 #include <dt-bindings/gpio/gpio.h>
 #include "r9a09g057.dtsi"
+#include "r9a09g057h4-evk-multi-os.dtsi"
 #include <dt-bindings/soc/renesas,rsci.h>
 
 /*
