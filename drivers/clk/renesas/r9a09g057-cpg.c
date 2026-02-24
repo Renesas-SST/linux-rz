@@ -778,9 +778,14 @@ static const struct rzv2h_mod_clk r9a09g057_mod_clks[] __initconst = {
 						BUS_MSTOP(5, BIT(7))),
 	DEF_MOD("pdm_1_cclk",			CDIV5_MAINOSC, 16, 6, 8, 6,
 						BUS_MSTOP(5, BIT(7))),
+	DEF_MOD("cm33_clk1",			CLK_QEXTAL, 1, 2, 0, 18,
+						BUS_MSTOP_NONE),
 };
 
 static const struct rzv2h_reset r9a09g057_resets[] __initconst = {
+	DEF_RST(1,  3, 0, 17),		/* CM33_RESET2 */
+	DEF_RST(1,  4, 0, 18),		/* CM33_RESET0 */
+	DEF_RST(1,  5, 0, 19),		/* CM33_RESET1 */
 	DEF_RST(3, 0, 1, 1),		/* SYS_0_PRESETN */
 	DEF_RST(3, 1, 1, 2),		/* DMAC_0_ARESETN */
 	DEF_RST(3, 2, 1, 3),		/* DMAC_1_ARESETN */
