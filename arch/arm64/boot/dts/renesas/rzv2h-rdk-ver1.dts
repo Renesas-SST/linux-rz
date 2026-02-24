@@ -702,6 +702,13 @@
     status = "okay";
 };
 
+&drp1 {
+    memory-region = <&codec0>;
+    memory-oca-region = <&opencva0>;
+
+    status = "okay";
+};
+
 &xhci0 {
     pinctrl-0 = <&usb30_pins>;
     pinctrl-names = "default";
