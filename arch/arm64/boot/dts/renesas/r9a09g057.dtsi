@@ -3436,6 +3436,26 @@
 				};
 			};
 		};
+
+		cm33_rproc: cm33 {
+			compatible = "renesas,rz-cm33";
+			reg = <0x0 0x08000000 0x0 0x00FFFFF>,
+			      <0x0 0x40010000 0x0 0x3EF0000>;
+			reg-names = "cm33_sram", "cm33_ddr";
+			memory-region = <&vdev0vring0>, <&vdev0vring1>, <&vdev0buffer>;
+			renesas,rz-cpg = <&cpg>;
+			renesas,rz-sysc = <&sys>;
+			renesas,rz-bootaddrs = <0x08003000>, <0x18003000>;
+			renesas,rz-rsctbl = <0x42F00000>;
+			clocks = <&cpg CPG_MOD R9A09G057_CM33_CLK1>;
+			clock-names = "cm33clk1";
+			resets = <&cpg R9A09G057_CM33_RESET2>,
+				 <&cpg R9A09G057_CM33_RESET0>,
+				 <&cpg R9A09G057_CM33_RESET1>;
+			reset-names = "cm33reset2", "cm33reset0", "cm33reset1";
+			power-domains = <&cpg>;
+			status = "okay";
+		};
 	};
 
 	stmmac_axi_setup: stmmac-axi-config {
