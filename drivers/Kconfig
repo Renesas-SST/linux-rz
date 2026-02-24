@@ -239,6 +239,8 @@ source "drivers/counter/Kconfig"
 
 source "drivers/most/Kconfig"
 
+source "drivers/drpai/Kconfig"
+
 source "drivers/peci/Kconfig"
 
 source "drivers/hte/Kconfig"

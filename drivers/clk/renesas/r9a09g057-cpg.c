@@ -483,6 +483,10 @@ static const struct rzv2h_mod_clk r9a09g057_mod_clks[] __initconst = {
     DEF_MOD("drp_dclkin",       CLK_QEXTAL, 17, 0, 8, 16),
     DEF_MOD("drp_aclk",         CLK_PLLDTY_DRP_DIV2, 17, 1, 8, 17),
     DEF_MOD("drp_initclk",      CLK_QEXTAL, 17, 2, 8, 18),
+    DEF_MOD("drpai_dclkin",		CLK_PLLDRP, 17, 3, 8, 19),
+    DEF_MOD("drpai_aclk",		CLK_PLLDTY_DRP_DIV2, 17, 4, 8, 20),
+    DEF_MOD("drpai_initclk",	CLK_PLLDRP, 17, 5, 8, 21),
+    DEF_MOD("drpai_mclk",		CLK_PLLETH, 17, 6, 8, 22),
 	DEF_MOD("ssi9_clk",			CLK_PLLCLN_DIV8, 24, 10, -1, -1),
 	DEF_MOD("ssi8_clk",			CLK_PLLCLN_DIV8, 24,  9, -1, -1),
 	DEF_MOD("ssi7_clk",			CLK_PLLCLN_DIV8, 24,  8, -1, -1),
@@ -655,6 +659,7 @@ static const struct rzv2h_reset r9a09g057_resets[] __initconst = {
 	DEF_RST(15, 7, 7, 8),		/* TSU0_PRESETN */
 	DEF_RST(15, 8, 7, 9),		/* TSU1_PRESETN */
 	DEF_RST(15, 12, 7, 13),     /* DRP0_ARESETN */
+	DEF_RST(15, 13,	7, 14),     /* DRPAI_0_ARESETN */
 };
 
 const struct rzv2h_cpg_info r9a09g057_cpg_info __initconst = {
