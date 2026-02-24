@@ -8,11 +8,11 @@ title: Renesas RZ remote processor controller bindings
 
 description:
   This document defines the binding for the remoteproc component that loads and
-  boots firmwares on the RZ/G2 chipset.
+  boots firmwares on the RZ chipset.
 
 properties:
   compatible:
-    const: renesas,rz-cm33
+    const: renesas,rz
 
   reg:
     description:
@@ -40,7 +40,7 @@ properties:
     maxItems: 1
 
   renesas,rz-bootaddrs:
-    description: remote processor's boot addresses. 
+    description: remote processor's boot addresses.
         1st cell: secure vector address
         2nd cell: non-secure vector address
     maxItems: 2
@@ -77,7 +77,7 @@ required:
   - reg
   - memory-region
   - renesas,rz-cpg
-  - renesas,rz-sysc 
+  - renesas,rz-sysc
   - renesas,rz-bootaddrs
   - renesas,rz-rsctbl
   - clocks
@@ -89,48 +89,51 @@ additionalProperties: false
 
 examples:
   - |
-    #include <dt-bindings/interrupt-controller/arm-gic.h>
-    #include <dt-bindings/clock/r9a07g054-cpg.h>
+	#include <dt-bindings/interrupt-controller/arm-gic.h>
+	#include <dt-bindings/clock/r9a09g057-cpg.h>
 
-    reserved-memory {
-            vdev0vring0: vdev0vring0@0x43000000 {
-                    compatible = "shared-dma-pool";
-                    reg = <0x0 0x43000000 0x0 0x50000>;
-                    no-map;
-            };
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
 
-            vdev0vring1: vdev0vring1@0x43050000 {
-                    compatible = "shared-dma-pool";
-                    reg = <0x0 0x43050000 0x0 0x50000>;
-                    no-map;
-            };
+		vdev0vring0: vdev0vring0@0x43000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x0 0x43000000 0x0 0x50000>;
+			no-map;
+		};
 
-            vdev0buffer: vdev0buffer@0x43200000 {
-                    compatible = "shared-dma-pool";
-                    reg = <0x0 0x43200000 0x0 0x300000>;
-                    no-map;
-            };
-    }
+		vdev0vring1: vdev0vring1@0x43050000 {
+			compatible = "shared-dma-pool";
+			reg = <0x0 0x43050000 0x0 0x50000>;
+			no-map;
+		};
 
-    cm33_rproc: cm33 {
-            compatible = "renesas,rz-cm33";
-            reg = <0x0 0x00010000 0x0 0x0000800>,
-                  <0x0 0x0001FF80 0x0 0x0000080>,
-                  <0x0 0x40010000 0x0 0x3EF0000>;
-            reg-names = "cm33_sram_ns", "cm33_sram_s", "cm33_ddr";
-            memory-region = <&vdev0vring0>, <&vdev0vring1>, <&vdev0buffer>;
-            renesas,rz-cpg = <&cpg>;
-            renesas,rz-sysc = <&sysc>;
-            renesas,rz-bootaddrs = <0x1001FF80>, <0x00010000>;
-            renesas,rz-rsctbl = <0x42F00000>;
-            clocks = <&cpg CPG_MOD R9A07G054_CM33_CLKIN>,
-                     <&cpg CPG_MOD R9A07G054_CM33_TSCLK>;
-            clock-names = "clkin", "tsclk";
-            resets = <&cpg R9A07G054_CM33_NPORESET>,
-                     <&cpg R9A07G054_CM33_NSYSRESET>,
-                     <&cpg R9A07G054_CM33_MISCRESETN>;
-            reset-names = "nporeset", "nsysreset", "miscresetn";
-            power-domains = <&cpg>;
-            status = "okay";
-    };
+		vdev0buffer: vdev0buffer@0x43200000 {
+			compatible = "shared-dma-pool";
+			reg = <0x0 0x43200000 0x0 0x300000>;
+			no-map;
+		};
+	};
+
+	cm33_rproc: cm33 {
+		compatible = "renesas,rz-cm33";
+		reg = <0x0 0x08000000 0x0 0x00FFFFF>,
+		      <0x0 0x40010000 0x0 0x3EF0000>;
+		reg-names = "cm33_sram", "cm33_ddr";
+		memory-region = <&vdev0vring0>, <&vdev0vring1>, <&vdev0buffer>;
+		renesas,rz-cpg = <&cpg>;
+		renesas,rz-sysc = <&sys>;
+		renesas,rz-bootaddrs = <0x08003000>, <0x18003000>;
+		renesas,rz-rsctbl = <0x42F00000>;
+		clocks = <&cpg CPG_MOD 0x12>;
+		clock-names = "cm33clk1";
+		resets = <&cpg 0x13>,
+			 <&cpg 0x14>,
+			 <&cpg 0x15>;
+		reset-names = "cm33reset2", "cm33reset0", "cm33reset1";
+		power-domains = <&cpg>;
+		status = "okay";
+	};
 ...
+
