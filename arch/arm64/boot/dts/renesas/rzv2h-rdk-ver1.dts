@@ -362,6 +362,20 @@
              <RZV2H_PORT_PINMUX(4, 1, 7)>,     /* SSI0_WS */
              <RZV2H_PORT_PINMUX(4, 2, 7)>;     /* SSI0_SDATA */
     };
+
+    can0-stb-hog {
+        gpio-hog;
+        gpios = <RZV2H_GPIO(A, 2) GPIO_ACTIVE_HIGH>;
+        output-low;
+        line-name = "can0_stb";
+    };
+
+    can3-stb-hog {
+        gpio-hog;
+        gpios = <RZV2H_GPIO(A, 3) GPIO_ACTIVE_HIGH>;
+        output-low;
+        line-name = "can3_stb";
+    };
 };
 
 &qextal_clk {
