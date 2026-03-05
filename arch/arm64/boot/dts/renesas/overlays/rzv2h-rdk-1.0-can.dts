@@ -7,6 +7,7 @@
 /plugin/;
 
 #include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
+#include <dt-bindings/gpio/gpio.h>
 
 &pinctrl {
     can0_pins: can0 {
@@ -14,9 +15,23 @@
                 <RZV2H_PORT_PINMUX(8, 1, 5)>; 	/* CRX0 */
     };
 
+    can0-stb-hog {
+        gpio-hog;
+        gpios = <RZV2H_GPIO(A, 2) GPIO_ACTIVE_HIGH>;
+        output-low;
+        line-name = "can0_stb";
+    };
+
     can3_pins: can3 {
         pinmux = <RZV2H_PORT_PINMUX(8, 6, 5)>, 	/* CTX3 */
                 <RZV2H_PORT_PINMUX(8, 7, 5)>; 	/* CRX3 */
+    };
+
+    can3-stb-hog {
+        gpio-hog;
+        gpios = <RZV2H_GPIO(A, 3) GPIO_ACTIVE_HIGH>;
+        output-low;
+        line-name = "can3_stb";
     };
 };
 
