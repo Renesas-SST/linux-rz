@@ -53,6 +53,23 @@
                         reg = <0x0 0x68000000 0x0 0x8000000>;
                 };
 
+                vdev0vring0: vdev0vring0@43000000 {
+                        compatible = "shared-dma-pool";
+                        reg = <0x0 0x43000000 0x0 0x50000>;
+                        no-map;
+                };
+
+                vdev0vring1: vdev0vring1@43050000 {
+                        compatible = "shared-dma-pool";
+                        reg = <0x0 0x43050000 0x0 0x50000>;
+                        no-map;
+                };
+
+                vdev0buffer: vdev0buffer@43200000 {
+                        compatible = "shared-dma-pool";
+                        reg = <0x0 0x43200000 0x0 0x300000>;
+                        no-map;
+                };
         };
 
         mmngr {
@@ -202,7 +219,7 @@
 };
 
 &ostm2 {
-	status = "okay";
+	status = "disabled";
 };
 
 &pinctrl {

@@ -46,6 +46,7 @@
 #include "rzg2l-smarc-pinfunction.dtsi"
 #include "rz-smarc-common.dtsi"
 #include "rzg2l-smarc.dtsi"
+#include "r9a07g044-multi-os.dtsi"
 
 / {
 	model = "Renesas SMARC EVK based on r9a07g044l2";
