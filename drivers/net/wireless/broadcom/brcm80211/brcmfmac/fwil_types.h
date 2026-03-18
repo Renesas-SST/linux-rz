@@ -24,7 +24,9 @@
 #define BRCMF_ARP_OL_HOST_AUTO_REPLY	0x00000004
 #define BRCMF_ARP_OL_PEER_AUTO_REPLY	0x00000008
 
-#define	BRCMF_BSS_INFO_VERSION	109 /* curr ver of brcmf_bss_info_le struct */
+#define	BRCMF_BSS_INFO_VER_109	109
+#define	BRCMF_BSS_INFO_VER_110	110
+
 #define BRCMF_BSS_RSSI_ON_CHANNEL	0x0004
 
 #define BRCMF_STA_BRCM			0x00000001	/* Running a Broadcom driver */
@@ -401,6 +403,7 @@ struct brcmf_pkt_filter_enable_le {
  * next bss_info structure in a vector (in struct brcmf_scan_results)
  */
 struct brcmf_bss_info_le {
+	/* v109 */
 	__le32 version;		/* version field */
 	__le32 length;		/* byte length of data in this record,
 				 * starting at version and including IEs
@@ -410,6 +413,7 @@ struct brcmf_bss_info_le {
 	__le16 capability;	/* Capability information */
 	u8 SSID_len;
 	u8 SSID[32];
+	u8 bcnflags;	/* additional flags w.r.t. beacon */
 	struct {
 		__le32 count;   /* # rates in this set */
 		u8 rates[16]; /* rates in 500kbps units w/hi bit set if basic */
@@ -417,21 +421,44 @@ struct brcmf_bss_info_le {
 	__le16 chanspec;	/* chanspec for bss */
 	__le16 atim_window;	/* units are Kusec */
 	u8 dtim_period;	/* DTIM period */
+	u8 accessnet;	/* from beacon interwork IE (if bcnflags) */
 	__le16 RSSI;		/* receive signal strength (in dBm) */
 	s8 phy_noise;		/* noise (in dBm) */
-
 	u8 n_cap;		/* BSS is 802.11N Capable */
-	/* 802.11N BSS Capabilities (based on HT_CAP_*): */
-	__le32 nbss_cap;
+	u8 he_cap;			/* BSS is he capable */
+	u8 padding1;
+	__le32 nbss_cap;	/* 802.11N BSS Capabilities (based on HT_CAP_*): */
 	u8 ctl_ch;		/* 802.11N BSS control channel number */
-	__le32 reserved32[1];	/* Reserved for expansion of BSS properties */
+	u8 padding2[3];
+	__le16 vht_rxmcsmap;	/* VHT rx mcs map (802.11ac IE, VHT_CAP_MCS_MAP_*) */
+	__le16 vht_txmcsmap;	/* VHT tx mcs map (802.11ac IE, VHT_CAP_MCS_MAP_*) */
 	u8 flags;		/* flags */
-	u8 reserved[3];	/* Reserved for expansion of BSS properties */
+	u8 vht_cap;		/* BSS is vht capable */
+	u8 padding3[2];		/* Reserved for expansion of BSS properties */
 	u8 basic_mcs[BRCMF_MCSSET_LEN];	/* 802.11N BSS required MCS set */
-
 	__le16 ie_offset;	/* offset at which IEs start, from beginning */
+	u8 padding4[2];
 	__le32 ie_length;	/* byte length of Information Elements */
 	__le16 SNR;		/* average SNR of during frame reception */
+	__le16 vht_mcsmap;	/* STA's Associated vhtmcsmap */
+	__le16 vht_mcsmap_prop;	/* STA's Associated prop vhtmcsmap */
+	__le16 vht_txmcsmap_prop;	/* prop VHT tx mcs prop */
+	__le32 he_mcsmap;	/* STA's Associated hemcsmap */
+	__le32 he_rxmcsmap;	/* HE rx mcs map */
+	__le32 he_txmcsmap;	/* HE tx mcs map */
+	__le32 timestamp[2];	/* Beacon Timestamp for FAKEAP req */
+
+	/* v110 */
+	/* Eht parameters in bss info
+	 */
+	u8 eht_cap;	/* BSS is eht capable */
+	u8 eht_20monly;	/* BSS is 20M only capable */
+	u8 ml_cap;	/* BSS is ML capable */
+	u8 linkid;	/* Link id(if ML capable) */
+	__le32 eht_txrxnssmap;	/* EHT txrx nss map */
+	__le32 eht_mcsnssmap;	/* EHT device nss map */
+	u8 mld_mac_address[ETH_ALEN];	/* MLD mac address(if ML capable) */
+
 	/* Add new fields here */
 	/* variable length Information Elements */
 };
