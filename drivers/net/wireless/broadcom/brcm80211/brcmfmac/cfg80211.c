@@ -10028,11 +10028,6 @@ static int brcmf_setup_wiphy(struct wiphy *wiphy, struct brcmf_if *ifp)
 	/* first entry in bandlist is number of bands */
 	for (band = 0; band < NUM_NL80211_BANDS; band++)
 		wiphy->bands[band] = NULL;
-	err = brcmf_fill_band_with_default_chanlist(wiphy, ifp);
-	if (err) {
-		bphy_err(drvr, "could not retrore band and channels: err=%d\n", err);
-		return err;
-	}
 
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
 
@@ -10803,6 +10798,12 @@ struct brcmf_cfg80211_info *brcmf_cfg80211_attach(struct brcmf_pub *drvr,
 	if (err < 0)
 		goto priv_out;
 
+	err = brcmf_setup_wiphybands(cfg);
+	if (err) {
+		bphy_err(drvr, "Setting wiphy bands failed (%d)\n", err);
+		goto wiphy_unreg_out;
+	}
+
 	brcmf_dbg(INFO, "Registering custom regulatory\n");
 	wiphy->reg_notifier = brcmf_cfg80211_reg_notifier;
 	wiphy->regulatory_flags |= REGULATORY_CUSTOM_REG;
@@ -10835,12 +10836,6 @@ struct brcmf_cfg80211_info *brcmf_cfg80211_attach(struct brcmf_pub *drvr,
 		ops->dump_survey = brcmf_cfg80211_dump_survey_2;
 	else
 		ops->dump_survey = NULL;
-
-	err = brcmf_setup_wiphybands(cfg);
-	if (err) {
-		bphy_err(drvr, "Setting wiphy bands failed (%d)\n", err);
-		goto wiphy_unreg_out;
-	}
 
 	err = wiphy_register(wiphy);
 	if (err < 0) {
