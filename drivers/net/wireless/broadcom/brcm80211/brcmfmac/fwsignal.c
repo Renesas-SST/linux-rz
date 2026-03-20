@@ -159,6 +159,8 @@ static const char *brcmf_fws_get_tlv_name(enum brcmf_fws_tlv_type id)
 
 #define BRCMF_FWS_PSQ_PREC_COUNT		((BRCMF_FWS_FIFO_COUNT + 1) * 2)
 #define BRCMF_FWS_PSQ_LEN				(256 * 8)
+#define BRCMF_FWS_AFQ_PREC_COUNT		((BRCMF_FWS_FIFO_COUNT + 1))
+#define BRCMF_FWS_AFQ_LEN			(4096 * 8)
 #define BRCMF_FWS_SHQUEUE_PSQ_LEN			256
 
 #define BRCMF_FWS_HTOD_FLAG_PKTFROMHOST			0x01
@@ -167,12 +169,36 @@ static const char *brcmf_fws_get_tlv_name(enum brcmf_fws_tlv_type id)
 #define BRCMF_FWS_RET_OK_NOSCHEDULE			0
 #define BRCMF_FWS_RET_OK_SCHEDULE			1
 
+#define BRCMF_FWS_MODE_HANGER	1 /* use hanger */
+#define BRCMF_FWS_MODE_AFQ		2 /* use afq (At Firmware Queue) */
+#define BRCMF_FWS_MODE_IS_OLD_DEF(x)   (((x) & 3U) != 0)
+
+#define BRCMF_FWS_MODE_AFQ_SHIFT		2	/* afq bit */
+/** returns TRUE if firmware supports 'at firmware queue' feature */
+#define BRCMF_FWS_MODE_GET_AFQ(x)	(((x) >> BRCMF_FWS_MODE_AFQ_SHIFT) & 1)
+
 #define BRCMF_FWS_MODE_REUSESEQ_SHIFT			3	/* seq reuse */
 #define BRCMF_FWS_MODE_SET_REUSESEQ(x, val)	((x) = \
 		((x) & ~(1 << BRCMF_FWS_MODE_REUSESEQ_SHIFT)) | \
 		(((val) & 1) << BRCMF_FWS_MODE_REUSESEQ_SHIFT))
 #define BRCMF_FWS_MODE_GET_REUSESEQ(x)	\
 		(((x) >> BRCMF_FWS_MODE_REUSESEQ_SHIFT) & 1)
+
+#define BRCMF_FWS_MODE_REORDERSUPP_SHIFT	4	/* host reorder suppress pkt bit */
+/** returns TRUE if 'reorder suppress' has been agreed upon between host and dongle */
+#define BRCMF_FWS_MODE_GET_REORDERSUPP(x)	(((x) >> BRCMF_FWS_MODE_REORDERSUPP_SHIFT) & 1)
+
+static inline u32 brcmf_fws_mode_set_afq(u32 mode, u8 val)
+{
+	return (mode & ~(1 << BRCMF_FWS_MODE_AFQ_SHIFT)) |
+	       ((val & 1) << BRCMF_FWS_MODE_AFQ_SHIFT);
+}
+
+static inline u32 brcmf_fws_mode_set_reordersupp(u32 mode, u8 val)
+{
+	return (mode & ~(1 << BRCMF_FWS_MODE_REORDERSUPP_SHIFT)) |
+	       ((val & 1) << BRCMF_FWS_MODE_REORDERSUPP_SHIFT);
+}
 
 /**
  * enum brcmf_fws_skb_state - indicates processing state of skb.
@@ -398,6 +424,7 @@ struct brcmf_fws_mac_descriptor {
 	bool send_tim_signal;
 	u8 traffic_pending_bmp;
 	u8 traffic_lastreported_bmp;
+	struct pktq afq;
 };
 
 #define BRCMF_FWS_HANGER_MAXITEMS	3072
@@ -518,11 +545,21 @@ struct brcmf_fws_info {
 	int fws_psq_len;
 	int fws_psq_hi_water;
 	int fws_psq_low_water;
+	int wlfc_mode;
 };
 
 #define BRCMF_FWS_TLV_DEF(name, id, len) \
 	case BRCMF_FWS_TYPE_ ## name: \
 		return len;
+
+static int
+brcmf_fws_deque_afq(struct brcmf_fws_info *fws,
+		    u16 hslot,
+		    u8 hcnt,
+		    u8 prec,
+		    struct sk_buff **pktout);
+static int
+brcmf_fws_enque_afq(struct brcmf_fws_info *fws, struct sk_buff *skb);
 
 /**
  * brcmf_fws_get_tlv_len() - returns defined length for given tlv id.
@@ -669,8 +706,9 @@ static void brcmf_fws_psq_flush(struct brcmf_fws_info *fws, struct pktq *q,
 		skb = brcmu_pktq_pdeq_match(q, prec, matchfn, &ifidx);
 		while (skb) {
 			hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
-			brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb,
-						true);
+			if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+				brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb,
+							true);
 			skbidx = brcmf_skb_if_flags_get_field(skb, INDEX);
 			brcmf_fws_flow_control_check(fws, q, skbidx);
 			brcmu_pkt_buf_free_skb(skb);
@@ -853,6 +891,8 @@ static void brcmf_fws_macdesc_cleanup(struct brcmf_fws_info *fws,
 {
 	if (entry->occupied && (ifidx == -1 || ifidx == entry->interface_id)) {
 		brcmf_fws_psq_flush(fws, &entry->psq, ifidx);
+		if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+			brcmu_pktq_flush(&entry->afq, true, NULL, NULL);
 		entry->occupied = !!(entry->psq.len);
 	}
 }
@@ -876,10 +916,12 @@ static void brcmf_fws_bus_txq_cleanup(struct brcmf_fws_info *fws,
 	for (prec = 0; prec < txq->num_prec; prec++) {
 		skb = brcmu_pktq_pdeq_match(txq, prec, fn, &ifidx);
 		while (skb) {
-			hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
-			hi = &fws->hanger.items[hslot];
-			WARN_ON(skb != hi->pkt);
-			hi->state = BRCMF_FWS_HANGER_ITEM_STATE_FREE;
+			if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode)) {
+				hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
+				hi = &fws->hanger.items[hslot];
+				WARN_ON(skb != hi->pkt);
+				hi->state = BRCMF_FWS_HANGER_ITEM_STATE_FREE;
+			}
 			brcmu_pkt_buf_free_skb(skb);
 			skb = brcmu_pktq_pdeq_match(txq, prec, fn, &ifidx);
 		}
@@ -905,7 +947,8 @@ static void brcmf_fws_cleanup(struct brcmf_fws_info *fws, int ifidx)
 
 	brcmf_fws_macdesc_cleanup(fws, &fws->desc.other, ifidx);
 	brcmf_fws_bus_txq_cleanup(fws, matchfn, ifidx);
-	brcmf_fws_hanger_cleanup(fws, matchfn, ifidx);
+	if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		brcmf_fws_hanger_cleanup(fws, matchfn, ifidx);
 }
 
 static u8 brcmf_fws_hdrpush(struct brcmf_fws_info *fws, struct sk_buff *skb)
@@ -1051,6 +1094,10 @@ int brcmf_fws_macdesc_indicate(struct brcmf_fws_info *fws, u8 type, u8 *data)
 			brcmu_pktq_init(&entry->psq,
 					BRCMF_FWS_PSQ_PREC_COUNT,
 					fws->fws_psq_len);
+			if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+				brcmu_pktq_init(&entry->afq,
+						BRCMF_FWS_AFQ_PREC_COUNT,
+						BRCMF_FWS_AFQ_LEN);
 			brcmf_fws_unlock(fws);
 			brcmf_dbg(TRACE, "add %s mac %pM\n", entry->name, addr);
 		} else {
@@ -1457,10 +1504,12 @@ static int brcmf_fws_txstatus_suppressed(struct brcmf_fws_info *fws, int fifo,
 
 	if (ret != 0) {
 		/* suppress q is full drop this packet */
-		brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb, true);
+		if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+			brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb, true);
 	} else {
 		/* Mark suppressed to avoid a double free during wlfc cleanup */
-		brcmf_fws_hanger_mark_suppressed(&fws->hanger, hslot);
+		if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+			brcmf_fws_hanger_mark_suppressed(&fws->hanger, hslot);
 	}
 
 	return ret;
@@ -1468,7 +1517,7 @@ static int brcmf_fws_txstatus_suppressed(struct brcmf_fws_info *fws, int fifo,
 
 static int
 brcmf_fws_txs_process(struct brcmf_fws_info *fws, u8 flags, u32 hslot,
-		      u32 genbit, u16 seq, u8 compcnt)
+		      u32 genbit, u16 seq, u8 compcnt, u8 hcnt, u8 fifo_id)
 {
 	struct brcmf_pub *drvr = fws->drvr;
 	u32 fifo;
@@ -1502,9 +1551,16 @@ brcmf_fws_txs_process(struct brcmf_fws_info *fws, u8 flags, u32 hslot,
 		bphy_err(drvr, "unexpected txstatus\n");
 
 	while (cnt < compcnt) {
-		ret = brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb,
-					      remove_from_hanger);
-		if (ret != 0) {
+		if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode)) {
+			if (flags != BRCMF_FWS_TXSTATUS_HOST_TOSSED)
+				ret = brcmf_fws_deque_afq(fws, hslot, hcnt, fifo_id, &skb);
+			else
+				skb = NULL;
+		} else {
+			ret = brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb,
+						      remove_from_hanger);
+		}
+		if (ret != 0 || !skb) {
 			bphy_err(drvr, "no packet in hanger slot: hslot=%d\n",
 				 hslot);
 			goto cont;
@@ -1545,8 +1601,10 @@ brcmf_fws_txs_process(struct brcmf_fws_info *fws, u8 flags, u32 hslot,
 			brcmf_txfinalize(ifp, skb, true);
 
 cont:
-		hslot = (hslot + 1) & (BRCMF_FWS_TXSTAT_HSLOT_MASK >>
-				       BRCMF_FWS_TXSTAT_HSLOT_SHIFT);
+		hcnt = (hcnt + 1) & BRCMF_FWS_TXSTAT_FREERUN_MASK;
+		if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+			hslot = (hslot + 1) & (BRCMF_FWS_TXSTAT_HSLOT_MASK >>
+					       BRCMF_FWS_TXSTAT_HSLOT_SHIFT);
 		if (BRCMF_FWS_MODE_GET_REUSESEQ(fws->mode))
 			seq = (seq + 1) & BRCMF_SKB_HTOD_SEQ_NR_MASK;
 
@@ -1667,7 +1725,7 @@ static int brcmf_fws_txstatus_indicate(struct brcmf_fws_info *fws, u8 type,
 	u32 status;
 	u32 hslot;
 	u32 genbit;
-	u8 flags;
+	u8 flags, hcnt, fifo_id;
 	u16 seq;
 	u8 compcnt;
 	u8 compcnt_offset = BRCMF_FWS_TYPE_TXSTATUS_LEN;
@@ -1677,6 +1735,8 @@ static int brcmf_fws_txstatus_indicate(struct brcmf_fws_info *fws, u8 type,
 	flags = brcmf_txstatus_get_field(status, FLAGS);
 	hslot = brcmf_txstatus_get_field(status, HSLOT);
 	genbit = brcmf_txstatus_get_field(status, GENERATION);
+	hcnt = brcmf_txstatus_get_field(status, FREERUN);
+	fifo_id = brcmf_txstatus_get_field(status, FIFO);
 	if (BRCMF_FWS_MODE_GET_REUSESEQ(fws->mode)) {
 		memcpy(&seq_le, &data[BRCMF_FWS_TYPE_TXSTATUS_LEN],
 		       sizeof(seq_le));
@@ -1693,7 +1753,7 @@ static int brcmf_fws_txstatus_indicate(struct brcmf_fws_info *fws, u8 type,
 	fws->stats.txs_indicate += compcnt;
 
 	brcmf_fws_lock(fws);
-	brcmf_fws_txs_process(fws, flags, hslot, genbit, seq, compcnt);
+	brcmf_fws_txs_process(fws, flags, hslot, genbit, seq, compcnt, hcnt, fifo_id);
 	brcmf_fws_unlock(fws);
 	return BRCMF_FWS_RET_OK_NOSCHEDULE;
 }
@@ -2129,7 +2189,7 @@ static void brcmf_fws_rollback_toq(struct brcmf_fws_info *fws,
 		fws->stats.rollback_failed++;
 		hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
 		brcmf_fws_txs_process(fws, BRCMF_FWS_TXSTATUS_HOST_TOSSED,
-				      hslot, 0, 0, 1);
+				      hslot, 0, 0, 1, 0, 0);
 	} else {
 		fws->stats.rollback_success++;
 		brcmf_fws_return_credits(fws, fifo, 1);
@@ -2212,15 +2272,22 @@ static int brcmf_fws_assign_htod(struct brcmf_fws_info *fws, struct sk_buff *p,
 				  int fifo)
 {
 	struct brcmf_skbuff_cb *skcb = brcmf_skbcb(p);
-	int rc, hslot;
+	int rc = 0, hslot;
 
 	skcb->htod = 0;
 	skcb->htod_seq = 0;
-	hslot = brcmf_fws_hanger_get_free_slot(&fws->hanger);
+
+	if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		hslot = (uint)(skcb->mac - &fws->desc.nodes[0]);
+	else
+		hslot = brcmf_fws_hanger_get_free_slot(&fws->hanger);
+
 	brcmf_skb_htod_tag_set_field(p, HSLOT, hslot);
 	brcmf_skb_htod_tag_set_field(p, FREERUN, skcb->mac->seq[fifo]);
 	brcmf_skb_htod_tag_set_field(p, FIFO, fifo);
-	rc = brcmf_fws_hanger_pushpkt(&fws->hanger, p, hslot);
+	if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		rc = brcmf_fws_hanger_pushpkt(&fws->hanger, p, hslot);
+
 	if (!rc)
 		skcb->mac->seq[fifo]++;
 	else
@@ -2295,6 +2362,8 @@ void brcmf_fws_add_interface(struct brcmf_if *ifp)
 	brcmu_pktq_init(&entry->psq,
 			BRCMF_FWS_PSQ_PREC_COUNT,
 			fws->fws_psq_len);
+	if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		brcmu_pktq_init(&entry->afq, BRCMF_FWS_AFQ_PREC_COUNT, BRCMF_FWS_AFQ_LEN);
 	brcmf_dbg(TRACE, "added %s\n", entry->name);
 }
 
@@ -2376,8 +2445,9 @@ static void brcmf_fws_dequeue_worker(struct work_struct *worker)
 			while ((skb = brcmf_fws_deq(fws, fifo)) != NULL) {
 				hslot = brcmf_skb_htod_tag_get_field(skb,
 								     HSLOT);
-				brcmf_fws_hanger_poppkt(&fws->hanger, hslot,
-							&skb, true);
+				if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+					brcmf_fws_hanger_poppkt(&fws->hanger, hslot,
+								&skb, true);
 				ifidx = brcmf_skb_if_flags_get_field(skb,
 								     INDEX);
 				/* Use proto layer to send data frame */
@@ -2520,7 +2590,7 @@ struct brcmf_fws_info *brcmf_fws_attach(struct brcmf_pub *drvr)
 	struct brcmf_if *ifp;
 	u32 tlv = BRCMF_FWS_FLAGS_RSSI_SIGNALS;
 	int rc;
-	u32 mode;
+	u32 mode, fw_caps;
 
 	fws = kzalloc(sizeof(*fws), GFP_KERNEL);
 	if (!fws) {
@@ -2596,24 +2666,54 @@ struct brcmf_fws_info *brcmf_fws_attach(struct brcmf_pub *drvr)
 		brcmf_dbg(INFO, "enabling AMPDU host-reorder failed\n");
 
 	/* Enable seq number reuse, if supported */
-	if (brcmf_fil_iovar_int_get(ifp, "wlfc_mode", &mode) == 0) {
-		if (BRCMF_FWS_MODE_GET_REUSESEQ(mode)) {
-			mode = 0;
-			BRCMF_FWS_MODE_SET_REUSESEQ(mode, 1);
-			if (brcmf_fil_iovar_int_set(ifp,
-						    "wlfc_mode", mode) == 0) {
-				BRCMF_FWS_MODE_SET_REUSESEQ(fws->mode, 1);
-			}
+	mode = 0;
+	if (brcmf_fil_iovar_int_get(ifp, "wlfc_mode", &fw_caps) == 0) {
+		brcmf_dbg(INFO, "wlfc_mode fw_caps=0x%x\n", fw_caps);
+
+		if (BRCMF_FWS_MODE_IS_OLD_DEF(fw_caps)) {
+			/* enable proptxtstatus v2 by default */
+			mode = BRCMF_FWS_MODE_AFQ;
+		} else {
+			mode = brcmf_fws_mode_set_afq(mode,
+						      BRCMF_FWS_MODE_GET_AFQ(fw_caps));
+			mode =
+			brcmf_fws_mode_set_reordersupp(mode,
+						       BRCMF_FWS_MODE_GET_REORDERSUPP(fw_caps));
 		}
+
+		if (!drvr->settings->afq_enable) {
+			if (BRCMF_FWS_MODE_IS_OLD_DEF(fw_caps))
+				mode = BRCMF_FWS_MODE_HANGER;
+			else
+				mode = brcmf_fws_mode_set_afq(mode, 0);
+		}
+
+		rc = brcmf_fil_iovar_int_set(ifp, "wlfc_mode", mode);
 	}
 
-	brcmf_fws_hanger_init(&fws->hanger);
+	fws->wlfc_mode = 0;
+	if (rc >= 0) {
+		if (BRCMF_FWS_MODE_IS_OLD_DEF(mode))
+			fws->wlfc_mode = brcmf_fws_mode_set_afq(fws->wlfc_mode,
+								(mode == BRCMF_FWS_MODE_AFQ));
+		else
+			fws->wlfc_mode = mode;
+	} else {
+		bphy_err(drvr, "set wlfc_mode failed, rc=%d\n", rc);
+		goto fail;
+	}
+
+	if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		brcmf_fws_hanger_init(&fws->hanger);
+
 	brcmf_fws_macdesc_init(&fws->desc.other, NULL, 0);
 	brcmf_fws_macdesc_set_name(fws, &fws->desc.other);
 	brcmf_dbg(INFO, "added %s\n", fws->desc.other.name);
 	brcmu_pktq_init(&fws->desc.other.psq,
 			BRCMF_FWS_PSQ_PREC_COUNT,
 			fws->fws_psq_len);
+	if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		brcmu_pktq_init(&fws->desc.other.afq, BRCMF_FWS_AFQ_PREC_COUNT, BRCMF_FWS_AFQ_LEN);
 
 	brcmf_dbg(INFO, "%s bdcv2 tlv signaling [%x]\n",
 		  fws->fw_signals ? "enabled" : "disabled", tlv);
@@ -2661,6 +2761,91 @@ bool brcmf_fws_fc_active(struct brcmf_fws_info *fws)
 	return fws->fcmode != BRCMF_FWS_FCMODE_NONE;
 }
 
+/** afq = At Firmware Queue, queue containing packets pending in the dongle */
+static int
+brcmf_fws_deque_afq(struct brcmf_fws_info *fws,
+		    u16 hslot,
+		    u8 hcnt,
+		    u8 prec,
+		    struct sk_buff **pktout)
+{
+	struct brcmf_fws_mac_descriptor *entry;
+	struct pktq *pq;
+	struct sk_buff_head *q;
+	struct sk_buff *p = NULL, *b = NULL;
+
+	if (!fws)
+		return -ENAVAIL;
+
+	if (pktout)
+		*pktout = NULL;
+
+	WARN_ON(hslot >= (BRCMF_FWS_MAC_DESC_TABLE_SIZE + BRCMF_MAX_IFS + 1));
+
+	if (hslot < BRCMF_FWS_MAC_DESC_TABLE_SIZE)
+		entry  = &fws->desc.nodes[hslot];
+	else if (hslot < (BRCMF_FWS_MAC_DESC_TABLE_SIZE + BRCMF_MAX_IFS))
+		entry = &fws->desc.iface[hslot - BRCMF_FWS_MAC_DESC_TABLE_SIZE];
+	else
+		entry = &fws->desc.other;
+
+	pq = &entry->afq;
+
+	WARN_ON(prec >= pq->num_prec);
+
+	q = &pq->q[prec].skblist;
+	skb_queue_walk(q, p) {
+		if (p && hcnt != brcmf_skb_htod_tag_get_field(p, FREERUN))
+			b = p;
+		else
+			break;
+	}
+
+	if (p == (struct sk_buff *)(q)) {
+		/* none is matched */
+		if (b)
+			brcmf_dbg(SDIO, "can't find matching seq(%d)\n", hcnt);
+		else
+			brcmf_dbg(SDIO, "queue is empty\n");
+		return 0;
+	}
+
+	if (!b) {
+		/* head packet is matched */
+		p = brcmu_pktq_pdeq(pq, prec);
+	} else {
+		/* middle packet is matched */
+		brcmf_dbg(SDIO, "out of order, seq(%d), head_seq(%d)\n", hcnt,
+			  brcmf_skb_htod_tag_get_field((struct sk_buff *)q, FREERUN));
+		skb_unlink(p, q);
+		pq->len--;
+	}
+
+	if (pktout)
+		*pktout = p;
+
+	return 0;
+} /* brcmf_fws_deque_afq */
+
+static int
+brcmf_fws_enque_afq(struct brcmf_fws_info *fws, struct sk_buff *skb)
+{
+	struct brcmf_fws_mac_descriptor *entry;
+	u32 hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
+	u32 fifo = brcmf_skb_htod_tag_get_field(skb, FIFO);
+
+	if (hslot < BRCMF_FWS_MAC_DESC_TABLE_SIZE)
+		entry  = &fws->desc.nodes[hslot];
+	else if (hslot < (BRCMF_FWS_MAC_DESC_TABLE_SIZE + BRCMF_MAX_IFS))
+		entry = &fws->desc.iface[hslot - BRCMF_FWS_MAC_DESC_TABLE_SIZE];
+	else
+		entry = &fws->desc.other;
+
+	brcmu_pktq_penq(&entry->afq, fifo, skb);
+
+	return 0;
+}
+
 void brcmf_fws_bustxcomplete(struct brcmf_fws_info *fws, struct sk_buff *skb,
 			     bool success)
 {
@@ -2675,7 +2860,12 @@ void brcmf_fws_bustxcomplete(struct brcmf_fws_info *fws, struct sk_buff *skb,
 		brcmf_fws_lock(fws);
 		hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
 		brcmf_fws_txs_process(fws, BRCMF_FWS_TXSTATUS_HOST_TOSSED, hslot,
-				      0, 0, 1);
+				      0, 0, 1, 0, 0);
+		brcmf_fws_unlock(fws);
+	} else {
+		brcmf_fws_lock(fws);
+		if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+			brcmf_fws_enque_afq(fws, skb);
 		brcmf_fws_unlock(fws);
 	}
 }
@@ -2728,6 +2918,9 @@ void brcmf_fws_cleanup_interface(struct brcmf_if *ifp)
 
 	/* cleanup interface */
 	brcmf_fws_psq_flush(fws, &entry->psq, ifidx);
+	if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		brcmu_pktq_flush(&entry->afq, true, NULL, NULL);
+
 	brcmf_fws_macdesc_reset(entry);
 
 	/* cleanup individual nodes */
@@ -2737,7 +2930,8 @@ void brcmf_fws_cleanup_interface(struct brcmf_if *ifp)
 
 	/* cleanup txq and hanger */
 	brcmf_fws_bus_txq_cleanup(fws, matchfn, ifidx);
-	brcmf_fws_hanger_cleanup(fws, matchfn, ifidx);
+	if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode))
+		brcmf_fws_hanger_cleanup(fws, matchfn, ifidx);
 
 	brcmf_fws_unlock(fws);
 }

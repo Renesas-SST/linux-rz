@@ -154,6 +154,10 @@ static int brcmf_short_psq;
 module_param_named(short_psq, brcmf_short_psq, int, 0);
 MODULE_PARM_DESC(short_psq, "Use shorter PS Queue");
 
+static int brcmf_afq_enable = 1;
+module_param_named(afq_enable, brcmf_afq_enable, int, 0);
+MODULE_PARM_DESC(afq_enable, "Enable AFQ txstatus mechanism");
+
 static char brcmf_coredump_path[BRCMF_COREDUMP_PATH_LEN] = {0};
 module_param_string(coredump_path, brcmf_coredump_path,
 		    BRCMF_COREDUMP_PATH_LEN, 0400);
@@ -815,6 +819,7 @@ int brcmf_debugfs_param_read(struct seq_file *s, void *data)
 	seq_printf(s, "%-20s: %d\n", "bt_over_sdio", !!brcmf_bt_over_sdio);
 	seq_printf(s, "%-20s: %d\n", "bus_idle_time", brcmf_sdio_bus_idle_time);
 	seq_printf(s, "%-20s: %d\n", "short_psq", !!brcmf_short_psq);
+	seq_printf(s, "%-20s: %d\n", "afq_enable", !!brcmf_afq_enable);
 	seq_printf(s, "%-20s: %s\n", "coredump_path", brcmf_coredump_path);
 	seq_printf(s, "%-20s: %d\n", "coredump_file_size", brcmf_coredump_file_size);
 
@@ -888,6 +893,8 @@ struct brcmf_mp_device *brcmf_get_module_param(struct device *dev,
 	brcmf_dbg(INFO, "bt_over_sdio: %d\n", settings->bt_over_sdio);
 	settings->short_psq = !!brcmf_short_psq;
 	brcmf_dbg(INFO, "brcmf_short_psq: %d\n", settings->short_psq);
+	settings->afq_enable = !!brcmf_afq_enable;
+	brcmf_dbg(INFO, "afq_enable: %d\n", settings->afq_enable);
 
 	settings->idleclk_disable = brcmf_sdio_idleclk_disable;
 	brcmf_dbg(INFO, "idleclk_disable: %d\n", settings->idleclk_disable);

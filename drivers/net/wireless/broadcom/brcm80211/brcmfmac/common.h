@@ -68,6 +68,7 @@ extern struct brcmf_mp_global_t brcmf_mp_global;
  * @sdio_in_isr: Handle SDIO DPC in ISR.
  * @offload_prof: Enable offloads configuration power profile (Low,Mid,High)
  * @offload_feat: offloads feature flags to be enabled for selected pwr profile
+ * @afq_enable: Enable AFQ txstatus mechanism.
  * @country_codes: If available, pointer to struct for translating country codes
  * @bus: Bus specific platform data. Only SDIO at the mmoment.
  * @pkt_prio: Support customer dscp to WMM up mapping.
@@ -91,6 +92,7 @@ struct brcmf_mp_device {
 	bool		sdio_rxf_in_kthread_enabled;
 	unsigned int	offload_prof;
 	unsigned int	offload_feat;
+	bool		afq_enable;
 	bool		bt_over_sdio;
 	bool		short_psq;
 	struct brcmfmac_pd_cc *country_codes;
