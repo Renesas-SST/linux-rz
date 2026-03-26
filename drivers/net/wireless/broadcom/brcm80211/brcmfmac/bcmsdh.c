@@ -1327,6 +1327,7 @@ static int brcmf_ops_sdio_probe(struct sdio_func *func,
 
 	brcmf_sdiod_acpi_save_power_manageable(sdiodev);
 	brcmf_sdiod_change_state(sdiodev, BRCMF_SDIOD_DOWN);
+	sdiodev->kso_state = BRCMF_KSO_ON;
 
 	brcmf_dbg(SDIO, "F2 found, calling brcmf_sdiod_probe...\n");
 	err = brcmf_sdiod_probe(sdiodev);

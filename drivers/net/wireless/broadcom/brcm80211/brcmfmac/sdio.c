@@ -5518,7 +5518,6 @@ static void brcmf_sdio_firmware_callback(struct device *dev, int err,
 	u32 nvram_len;
 	u8 saveclk, bpreq;
 	u8 devctl;
-	unsigned long flags;
 
 	brcmf_dbg(ULP, "Enter: dev=%s, err=%d\n", dev_name(dev), err);
 
@@ -5568,9 +5567,6 @@ static void brcmf_sdio_firmware_callback(struct device *dev, int err,
 	brcmf_sdiod_writel(sdiod, core->base + SD_REG(tosbmailboxdata),
 			   SDPCM_PROT_VERSION << SMB_DATA_VERSION_SHIFT, NULL);
 
-	write_lock_irqsave(&bus->sleep_lock, flags);
-	bus->sdiodev->kso_state = BRCMF_KSO_ON;
-	write_unlock_irqrestore(&bus->sleep_lock, flags);
 	err = sdio_enable_func(sdiod->func2);
 
 	brcmf_dbg(INFO, "enable F2: err=%d\n", err);
