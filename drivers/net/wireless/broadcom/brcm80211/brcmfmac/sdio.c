@@ -2811,7 +2811,8 @@ brcmf_sdio_txpkt_postp(struct brcmf_sdio *bus, struct sk_buff_head *pktq)
 			skb_pull(pkt_next, dat_offset);
 			if (bus->txglom) {
 				tail_pad = le16_to_cpu(*(__le16 *)(hdr - 2));
-				skb_trim(pkt_next, pkt_next->len - tail_pad);
+				if (tail_pad)
+					skb_trim(pkt_next, pkt_next->len - tail_pad);
 			}
 		}
 	}
