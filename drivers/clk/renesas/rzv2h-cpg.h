@@ -16,26 +16,29 @@
  *
  * @offset: STBY register offset
  * @has_clkn: Flag to indicate if CLK1/2 are accessible or not
+ * @instance: PLL instance number
  */
 struct pll {
 	unsigned int offset:9;
 	unsigned int has_clkn:1;
-	unsigned long min;
-	unsigned long max;
+	unsigned int instance:2;
+	const struct rzv2h_pll_limits *limits;
 };
 
-#define PLL_PACK(_offset, _has_clkn, _min, _max) \
+#define PLL_PACK_LIMITS(_offset, _has_clkn, _instance, _limits) \
 	((struct pll){ \
 		.offset = _offset, \
 		.has_clkn = _has_clkn, \
-		.min = _min, \
-		.max = _max \
+		.instance = _instance, \
+		.limits = _limits \
 	})
 
-#define PLLCA55		PLL_PACK(0x60, 1, 1100, 1800)
-#define PLLGPU		PLL_PACK(0x120, 1, 1000, 1260)
-#define PLLDRP		PLL_PACK(0x140, 1, 1260, 1260)
-#define PLLDSI		PLL_PACK(0xC0, 1, 25, 375)
+#define PLL_PACK(_offset, _has_clkn, _instance) \
+	PLL_PACK_LIMITS(_offset, _has_clkn, _instance, NULL)
+
+#define PLLCA55		PLL_PACK(0x60, 1, 0)
+#define PLLGPU		PLL_PACK(0x120, 1, 0)
+#define PLLDRP		PLL_PACK(0x140, 1, 0)
 
 /**
  * struct ddiv - Structure for dynamic switching divider
@@ -121,9 +124,11 @@ struct fixed_mod_conf {
 #define CPG_SSEL1		(0x304)
 #define CPG_CDDIV0		(0x400)
 #define CPG_CDDIV1		(0x404)
+#define CPG_CDDIV2		(0x408)
 #define CPG_CDDIV3		(0x40C)
 #define CPG_CDDIV4		(0x410)
 #define CPG_CSDIV0		(0x500)
+#define CPG_CSDIV1		(0x504)
 
 #define CDDIV0_DIVCTL1	DDIV_PACK(CPG_CDDIV0, 4, 3, 1)
 #define CDDIV0_DIVCTL2	DDIV_PACK(CPG_CDDIV0, 8, 3, 2)
@@ -131,6 +136,8 @@ struct fixed_mod_conf {
 #define CDDIV1_DIVCTL1	DDIV_PACK(CPG_CDDIV1, 4, 2, 5)
 #define CDDIV1_DIVCTL2	DDIV_PACK(CPG_CDDIV1, 8, 2, 6)
 #define CDDIV1_DIVCTL3	DDIV_PACK(CPG_CDDIV1, 12, 2, 7)
+#define CDDIV2_DIVCTL2	DDIV_PACK(CPG_CDDIV2, 4, 3, 10)
+#define CDDIV3_DIVCTL0	DDIV_PACK(CPG_CDDIV3, 0, 3, 12)
 #define CDDIV3_DIVCTL1	DDIV_PACK(CPG_CDDIV3, 4, 3, 13)
 #define CDDIV3_DIVCTL2	DDIV_PACK(CPG_CDDIV3, 8, 3, 14)
 #define CDDIV3_DIVCTL3	DDIV_PACK(CPG_CDDIV3, 12, 1, 15)
@@ -140,7 +147,12 @@ struct fixed_mod_conf {
 
 #define CSDIV0_DIVCTL0	DDIV_PACK(CPG_CSDIV0, 0, 2, CSDIV_NO_MON)
 #define CSDIV0_DIVCTL1	DDIV_PACK(CPG_CSDIV0, 4, 2, CSDIV_NO_MON)
+#define CSDIV0_DIVCTL2	DDIV_PACK(CPG_CSDIV0, 8, 2, CSDIV_NO_MON)
 #define CSDIV0_DIVCTL3	DDIV_PACK_NO_RMW(CPG_CSDIV0, 12, 2, CSDIV_NO_MON)
+#define CSDIV1_DIVCTL2	DDIV_PACK(CPG_CSDIV1, 8, 4, CSDIV_NO_MON)
+
+#define CSDIV1_DIVCTL0  DDIV_PACK(CPG_CSDIV1, 0, 1, CSDIV_NO_MON)
+#define CSDIV1_DIVCTL1  DDIV_PACK(CPG_CSDIV1, 4, 2, CSDIV_NO_MON)
 
 #define SSEL0_SELCTL2	SMUX_PACK(CPG_SSEL0, 8, 1)
 #define SSEL0_SELCTL3	SMUX_PACK(CPG_SSEL0, 12, 1)
@@ -149,20 +161,6 @@ struct fixed_mod_conf {
 #define SSEL1_SELCTL2	SMUX_PACK(CPG_SSEL1, 8, 1)
 #define SSEL1_SELCTL3	SMUX_PACK(CPG_SSEL1, 12, 1)
 
-#define CPG_SSEL(x)		(0x300 + 4 * (x))
-#define CPG_CDDIV(x)		(0x400 + 4 * (x))
-#define CPG_CSDIV(x)		(0x500 + 4 * (x))
-
-#define SSELx_SELCTLy(x, y)		SMUX_PACK(CPG_SSEL(x), (y) * 4, 1)
-#define CDDIVx_DIVCTLy(x, y, w)		DDIV_PACK(CPG_CDDIV(x), (y) * 4, w, (x) * 4 + (y))
-#define CSDIVx_DIVCTLy(x, y, w)		DDIV_PACK(CPG_CSDIV(x), (y) * 4, w, -1)
-
-#define CSDIV0_DIVCTL0_NO_MON	DDIV_PACK(CPG_CSDIV(0), 0, 2, CSDIV_NO_MON)
-#define CSDIV0_DIVCTL1_NO_MON	DDIV_PACK(CPG_CSDIV(0), 4, 2, CSDIV_NO_MON)
-#define CSDIV1_DIVCTL0_NO_MON	DDIV_PACK(CPG_CSDIV(1), 0, 1, CSDIV_NO_MON)
-#define CSDIV1_DIVCTL1_NO_MON	DDIV_PACK(CPG_CSDIV(1), 4, 2, CSDIV_NO_MON)
-#define CSDIV0_DIVCTL3_NO_MON	DDIV_PACK_NO_RMW(CPG_CSDIV(0), 12, 2, CSDIV_NO_MON)
-
 #define BUS_MSTOP_IDX_MASK	GENMASK(31, 16)
 #define BUS_MSTOP_BITS_MASK	GENMASK(15, 0)
 #define BUS_MSTOP(idx, mask)	(FIELD_PREP_CONST(BUS_MSTOP_IDX_MASK, (idx)) | \
@@ -170,7 +168,14 @@ struct fixed_mod_conf {
 #define BUS_MSTOP_NONE		GENMASK(31, 0)
 
 #define FIXED_MOD_CONF_XSPI	FIXED_MOD_CONF_PACK(5, 1)
-#define EXTAL_FREQ_IN_MEGA_HZ   (24)
+
+#define CPG_SSEL(x)		(0x300 + 4 * (x))
+#define CPG_CDDIV(x)		(0x400 + 4 * (x))
+#define CPG_CSDIV(x)		(0x500 + 4 * (x))
+
+#define SSELx_SELCTLy(x, y)		SMUX_PACK(CPG_SSEL(x), (y) * 4, 1)
+#define CDDIVx_DIVCTLy(x, y, w)		DDIV_PACK(CPG_CDDIV(x), (y) * 4, w, (x) * 4 + (y))
+#define CSDIVx_DIVCTLy(x, y, w)		DDIV_PACK(CPG_CSDIV(x), (y) * 4, w, -1)
 
 /**
  * Definitions of CPG Core Clocks
@@ -207,12 +212,10 @@ enum clk_types {
 	CLK_TYPE_FF,		/* Fixed Factor Clock */
 	CLK_TYPE_FF_MOD_STATUS,	/* Fixed Factor Clock which can report the status of module clock */
 	CLK_TYPE_PLL,
-	CLK_TYPE_PLLDSI,
 	CLK_TYPE_DDIV,		/* Dynamic Switching Divider */
-	CLK_TYPE_SDIV,		/* Static Switching Divider */
 	CLK_TYPE_SMUX,		/* Static Mux */
-	CLK_TYPE_PLLDSI_SDIV,
-	CLK_TYPE_PLL_DIV,	/* Clock for divider after PLL clock */
+	CLK_TYPE_PLLDSI,	/* PLLDSI */
+	CLK_TYPE_PLLDSI_DIV,	/* PLLDSI divider */
 };
 
 #define DEF_TYPE(_name, _id, _type...) \
@@ -220,11 +223,7 @@ enum clk_types {
 #define DEF_BASE(_name, _id, _type, _parent...) \
 	DEF_TYPE(_name, _id, _type, .parent = _parent)
 #define DEF_PLL(_name, _id, _parent, _pll_packed) \
-	DEF_TYPE(_name, _id, CLK_TYPE_PLL, .parent = _parent, \
-		.cfg.pll = _pll_packed)
-#define DEF_PLLDSI(_name, _id, _parent, _pll_packed) \
-	DEF_TYPE(_name, _id, CLK_TYPE_PLLDSI, .parent = _parent, \
-		.cfg.pll = _pll_packed)
+	DEF_TYPE(_name, _id, CLK_TYPE_PLL, .parent = _parent, .cfg.pll = _pll_packed)
 #define DEF_INPUT(_name, _id) \
 	DEF_TYPE(_name, _id, CLK_TYPE_IN)
 #define DEF_FIXED(_name, _id, _parent, _mult, _div) \
@@ -247,28 +246,14 @@ enum clk_types {
 		 .num_parents = ARRAY_SIZE(_parent_names), \
 		 .flag = CLK_SET_RATE_PARENT, \
 		 .mux_flags = CLK_MUX_HIWORD_MASK)
-#define DEF_SDIV(_name, _id, _parent, _ddiv_packed, _dtable) \
-	DEF_TYPE(_name, _id, CLK_TYPE_SDIV, \
-		.cfg.ddiv = _ddiv_packed, \
-		.parent = _parent, \
-		.dtable = _dtable, \
-		.flag = CLK_DIVIDER_HIWORD_MASK)
-#define DEF_PLLDSI_SDIV(_name, _id, _parent, _ddiv_packed, _dtable) \
-	DEF_TYPE(_name, _id, CLK_TYPE_PLLDSI_SDIV, \
-		.cfg.ddiv = _ddiv_packed, \
-		.dtable = _dtable, \
-		.parent = _parent, \
-		.flag = CLK_DIVIDER_HIWORD_MASK)
-#define DEF_MUX_FLAGS(_name, _id, _mux_packed, _parent_names, _flags) \
-	DEF_TYPE(_name, _id, CLK_TYPE_MUX, \
-		.cfg.mux = _mux_packed, \
-		.cfg.mux.parent_names = _parent_names, \
-		.cfg.mux.num_parents = ARRAY_SIZE(_parent_names), \
-		.cfg.mux.mux_flags = CLK_MUX_HIWORD_MASK, \
-		.flag = _flags)
-#define DEF_PLL_DIV(_name, _id, _parent, _mult, _div) \
-	DEF_TYPE(_name, _id, CLK_TYPE_PLL_DIV, .parent = _parent, \
-		.div = _div, .mult = _mult)
+#define DEF_PLLDSI(_name, _id, _parent, _pll_packed) \
+	DEF_TYPE(_name, _id, CLK_TYPE_PLLDSI, .parent = _parent, .cfg.pll = _pll_packed)
+#define DEF_PLLDSI_DIV(_name, _id, _parent, _ddiv_packed, _dtable) \
+	DEF_TYPE(_name, _id, CLK_TYPE_PLLDSI_DIV, \
+		 .cfg.ddiv = _ddiv_packed, \
+		 .dtable = _dtable, \
+		 .parent = _parent, \
+		 .flag = CLK_SET_RATE_PARENT)
 
 /**
  * struct rzv2h_mod_clk - Module Clocks definitions

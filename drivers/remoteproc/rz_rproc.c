@@ -473,7 +473,7 @@ error:
 	return ret;
 }
 
-static int rz_rproc_remove(struct platform_device *pdev)
+static void rz_rproc_remove(struct platform_device *pdev)
 {
 	struct rproc *rproc = platform_get_drvdata(pdev);
 
@@ -482,8 +482,6 @@ static int rz_rproc_remove(struct platform_device *pdev)
 	rproc_free(rproc);
 
 	pm_runtime_disable(&pdev->dev);
-
-	return 0;
 }
 
 static const struct of_device_id rz_rproc_of_match[] = {
