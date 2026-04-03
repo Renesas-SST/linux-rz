@@ -33,6 +33,8 @@
 
 &rsci_i2c7 {
     status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
 
     da7219: da7219@1a {
         compatible = "dlg,da7219";
@@ -79,6 +81,9 @@
 
     ports {
         /* Add DA7219 port */
+        #address-cells = <1>;
+        #size-cells = <0>;
+
         rsnd_port0: port@0 {
             reg = <0>;
             rsnd_endpoint0: endpoint {
