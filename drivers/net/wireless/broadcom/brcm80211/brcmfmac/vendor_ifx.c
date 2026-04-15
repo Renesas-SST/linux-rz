@@ -1502,3 +1502,57 @@ int ifx_cfg80211_vndr_cmds_mchan_config(struct wiphy *wiphy,
 
 	return 0;
 }
+
+#define RRM_CAP_CMD_GET 0x00
+#define RRM_CAP_CMD_SET 0x01
+#define RRM_CAP_CMD_LEN 1
+
+int ifx_cfg80211_vndr_cmds_rrm_cap(struct wiphy *wiphy, struct wireless_dev *wdev,
+				   const void *data, int len)
+{
+	int ret = 0;
+	struct brcmf_cfg80211_vif *vif;
+	struct brcmf_if *ifp;
+	u64 buf = 0;
+	u8 cmd = 0;
+
+	vif = container_of(wdev, struct brcmf_cfg80211_vif, wdev);
+	ifp = vif->ifp;
+
+	if (len < RRM_CAP_CMD_LEN) {
+		brcmf_err("invalid length: %d\n", len);
+		return -EINVAL;
+	}
+
+	cmd = ((u8 *)data)[0];
+	if (cmd == RRM_CAP_CMD_GET) {
+		if (len != RRM_CAP_CMD_LEN) {
+			brcmf_err("GET command must be exactly 1 byte, got %d\n", len);
+			return -EINVAL;
+		}
+		/* Handle GET */
+		ret = brcmf_fil_iovar_data_get(ifp, "rrm", &buf, sizeof(buf));
+		if (ret) {
+			brcmf_err("get rrm error:%d\n", ret);
+			return ret;
+		}
+
+		brcmf_dbg(INFO, "get rrm: 0x%llx\n", buf);
+		ifx_cfg80211_vndr_send_cmd_reply(wiphy, &buf, sizeof(long long));
+	} else if (cmd == RRM_CAP_CMD_SET) {
+		if (len > RRM_CAP_CMD_LEN + sizeof(u64))
+			return -EINVAL;
+		/* Handle SET */
+		memcpy(&buf, (u8 *)data + RRM_CAP_CMD_LEN, sizeof(u64));
+		ret = brcmf_fil_iovar_data_set(ifp, "rrm", &buf, sizeof(buf));
+		if (ret) {
+			brcmf_err("set rrm:%d\n", ret);
+			return ret;
+		}
+	} else {
+		brcmf_err("invalid command type: %d\n", cmd);
+		return -EINVAL;
+	}
+
+	return 0;
+}

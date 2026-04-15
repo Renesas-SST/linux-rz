@@ -115,6 +115,8 @@ struct bcm_iov_buf {
  *
  * @IFX_VENDOR_SCMD_SSID_PROT: Vendor command to enable/disable SSID protection
  *
+ * @IFX_VENDOR_SCMD_RRM_CAP: Vendor command to enable/disable RRM capabilities
+ *
  * @IFX_VENDOR_SCMD_MAX: This acts as a the tail of cmds list.
  *      Make sure it located at the end of the list.
  */
@@ -151,7 +153,8 @@ enum ifx_nl80211_vendor_subcmds {
 	/* Reserved 29 */
 	SCMD(SSID_PROT)		= 30,
 	SCMD(MCHAN_CONFIG)	= 31,
-	SCMD(MAX)		= 32
+	SCMD(RRM_CAP)		= 32,
+	SCMD(MAX)		= 33
 };
 
 /* enum ifx_vendor_evts - IFX nl80211 vendor events
@@ -849,5 +852,6 @@ int ifx_cfg80211_vndr_cmds_ssid_prot(struct wiphy *wiphy,
 				     struct wireless_dev *wdev, const void *data, int len);
 int ifx_cfg80211_vndr_cmds_mchan_config(struct wiphy *wiphy,
 					struct wireless_dev *wdev, const void *data, int len);
-
+int ifx_cfg80211_vndr_cmds_rrm_cap(struct wiphy *wiphy, struct wireless_dev *wdev,
+				   const void *data, int len);
 #endif /* IFX_VENDOR_H */
