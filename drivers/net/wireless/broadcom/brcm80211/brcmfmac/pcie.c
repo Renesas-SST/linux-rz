@@ -54,7 +54,6 @@ enum brcmf_pcie_state {
 BRCMF_FW_DEF(43602, "brcmfmac43602-pcie");
 BRCMF_FW_DEF(4350, "brcmfmac4350-pcie");
 BRCMF_FW_DEF(4350C, "brcmfmac4350c2-pcie");
-CY_FW_DEF(4355, "cyfmac89459-pcie");
 BRCMF_FW_CLM_DEF(4355C1, "brcmfmac4355c1-pcie");
 CY_FW_DEF(4356, "cyfmac4356-pcie");
 CY_FW_DEF(43570, "cyfmac43570-pcie");
@@ -73,7 +72,7 @@ BRCMF_FW_CLM_DEF(4377B3, "brcmfmac4377b3-pcie");
 BRCMF_FW_CLM_DEF(4378B1, "brcmfmac4378b1-pcie");
 BRCMF_FW_CLM_DEF(4378B3, "brcmfmac4378b3-pcie");
 BRCMF_FW_CLM_DEF(4387C2, "brcmfmac4387c2-pcie");
-CY_FW_DEF(54591, "brcmfmac54591-pcie");
+CY_FW_DEF(4355, "cyfmac54591-pcie");
 CY_FW_TRXSE_DEF(55572, "cyfmac55572-pcie");
 CY_FW_DEF(4373, "cyfmac4373-pcie");
 
@@ -92,7 +91,6 @@ static const struct brcmf_firmware_mapping brcmf_pcie_fwnames[] = {
 	BRCMF_FW_ENTRY(BRCM_CC_4350_CHIP_ID, 0x000000FF, 4350C),
 	BRCMF_FW_ENTRY(BRCM_CC_4350_CHIP_ID, 0xFFFFFF00, 4350),
 	BRCMF_FW_ENTRY(BRCM_CC_43525_CHIP_ID, 0xFFFFFFF0, 4365C),
-	BRCMF_FW_ENTRY(BRCM_CC_4355_CHIP_ID, 0xFFFFFFFF, 4355),
 	BRCMF_FW_ENTRY(BRCM_CC_4356_CHIP_ID, 0xFFFFFFFF, 4356),
 	BRCMF_FW_ENTRY(BRCM_CC_43567_CHIP_ID, 0xFFFFFFFF, 43570),
 	BRCMF_FW_ENTRY(BRCM_CC_43569_CHIP_ID, 0xFFFFFFFF, 43570),
@@ -116,6 +114,7 @@ static const struct brcmf_firmware_mapping brcmf_pcie_fwnames[] = {
 	BRCMF_FW_ENTRY(BRCM_CC_4387_CHIP_ID, 0xFFFFFFFF, 4387C2), /* revision ID 7 */
 	BRCMF_FW_ENTRY(CY_CC_55572_CHIP_ID, 0xFFFFFFFF, 55572),
 	BRCMF_FW_ENTRY(CY_CC_4373_CHIP_ID, 0xFFFFFFFF, 4373),
+	BRCMF_FW_ENTRY(CY_CC_89459_CHIP_ID, 0xFFFFFFFF, 4355),
 };
 
 #define BRCMF_PCIE_READ_SHARED_TIMEOUT	5000 /* msec */
@@ -2890,7 +2889,7 @@ brcmf_pcie_prepare_fw_request(struct brcmf_pciedev_info *devinfo)
 
 	if (devinfo->ci->blhs)
 		fwnames[BRCMF_PCIE_FW_CODE].extension = ".trxse";
-	
+
 	fwreq = brcmf_fw_alloc_request(devinfo->ci->chip, devinfo->ci->chiprev,
 				       brcmf_pcie_fwnames,
 				       ARRAY_SIZE(brcmf_pcie_fwnames),
@@ -3406,7 +3405,6 @@ static const struct dev_pm_ops brcmf_pciedrvr_pm = {
 
 static const struct pci_device_id brcmf_pcie_devid_table[] = {
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_4350_DEVICE_ID, WCC),
-	BRCMF_PCIE_DEVICE_SUB(0x4355, BRCM_PCIE_VENDOR_ID_BROADCOM, 0x4355, WCC),
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_4354_RAW_DEVICE_ID, WCC),
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_4356_DEVICE_ID, WCC),
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_43567_DEVICE_ID, WCC),
@@ -3432,9 +3430,10 @@ static const struct pci_device_id brcmf_pcie_devid_table[] = {
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_4378_DEVICE_ID, WCC_SEED),
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_4387_DEVICE_ID, WCC_SEED),
 	BRCMF_PCIE_DEVICE(BRCM_PCIE_43752_DEVICE_ID, WCC_SEED),
-	BRCMF_PCIE_DEVICE(CY_PCIE_54591_DEVICE_ID, CYW),
+	BRCMF_PCIE_DEVICE_CY(CY_PCIE_54591_DEVICE_ID, CYW),
 	BRCMF_PCIE_DEVICE(CY_PCIE_54590_DEVICE_ID, CYW),
 	BRCMF_PCIE_DEVICE(CY_PCIE_54594_DEVICE_ID, CYW),
+	BRCMF_PCIE_DEVICE(CY_CC_89459_CHIP_ID, CYW),
 	BRCMF_PCIE_DEVICE_CY(CY_PCIE_55572_DEVICE_ID, CYW),
 	BRCMF_PCIE_DEVICE(CY_PCIE_4373_RAW_DEVICE_ID, CYW),
 	BRCMF_PCIE_DEVICE(CY_PCIE_4373_DUAL_DEVICE_ID, CYW),
