@@ -2374,6 +2374,16 @@ static int brcmf_pcie_get_resource(struct brcmf_pciedev_info *devinfo)
 	}
 
 	pci_set_master(pdev);
+	
+	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+	if (err) {
+		err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+		if (err) {
+			brcmf_err(bus, "No suitable DMA configuration available\n");
+			return err;
+		}
+		brcmf_err(bus, "Falling back to 32-bit DMA addressing\n");
+	}
 
 	/* Bar-0 mapped address */
 	bar0_addr = pci_resource_start(pdev, 0);
