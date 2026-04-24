@@ -130,3 +130,8 @@
 &adc {
 	status = "okay";
 };
+
+&drpai0 {
+	memory-region = <&drp_reserved>;
+	status = "okay";
+};
