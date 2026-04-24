@@ -802,8 +802,14 @@ int rsnd_adg_probe(struct rsnd_priv *priv)
 		return ret;
 
 	ret = rsnd_adg_clk_enable(priv);
+	/*
+	* Some boards do not provide external audio clocks (CLK_A/CLK_B/CLK_C)
+	* and use internal CLK_I as an approximate rate source instead.
+	* In that case, failure to enable ADG external clocks should not abort
+	* rcar_sound probe.
+	*/
 	if (ret)
-		return ret;
+		dev_warn(dev, "ADG clock enable failed, continuing with CLK_I fallback if available\n");
 
 	rsnd_adg_clk_dbg_info(priv, NULL);
 
