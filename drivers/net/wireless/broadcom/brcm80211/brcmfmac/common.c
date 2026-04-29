@@ -28,9 +28,13 @@
 #include "pcie.h"
 #include "sdio.h"
 
+
+#define MODULE_VER BCM_TAG_STR "-" BCM_SHAID_STR
+
 MODULE_AUTHOR("Broadcom Corporation");
 MODULE_DESCRIPTION("Broadcom 802.11 wireless LAN fullmac driver.");
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_VERSION(MODULE_VER);
 
 #define BRCMF_DEFAULT_SCAN_CHANNEL_TIME	40
 #define BRCMF_DEFAULT_SCAN_UNASSOC_TIME	40
