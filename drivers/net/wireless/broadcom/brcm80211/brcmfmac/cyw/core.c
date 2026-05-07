@@ -43,7 +43,7 @@ static int brcmf_cyw_set_sae_pwd(struct brcmf_if *ifp,
 	memcpy(sae_pwd.key, crypto->sae_pwd, pwd_len);
 
 	err = brcmf_fil_iovar_data_set(ifp, "sae_password", &sae_pwd,
-				       sizeof(sae_pwd));
+				       sizeof(sae_pwd), NULL);
 	if (err < 0)
 		bphy_err(drvr, "failed to set SAE password in firmware (len=%u)\n",
 			 pwd_len);
@@ -97,7 +97,7 @@ static int brcmf_cyw_activate_events(struct brcmf_if *ifp)
 	memcpy(eventmask_msg->mask, fweh->event_mask, fweh->event_mask_len);
 
 	err = brcmf_fil_iovar_data_set(ifp, "event_msgs_ext", eventmask_msg,
-				       msglen);
+				       msglen, NULL);
 	kfree(eventmask_msg);
 	return err;
 }
@@ -232,7 +232,7 @@ brcmf_cyw_external_auth(struct wiphy *wiphy, struct net_device *dev,
 		memcpy(auth_status.pmkid, params->pmkid, WLAN_PMKID_LEN);
 
 	ret = brcmf_fil_iovar_data_set(ifp, "auth_status", &auth_status,
-				       sizeof(auth_status));
+				       sizeof(auth_status), NULL);
 	if (ret < 0)
 		bphy_err(drvr, "auth_status iovar failed: ret=%d\n", ret);
 

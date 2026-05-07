@@ -2656,18 +2656,18 @@ struct brcmf_fws_info *brcmf_fws_attach(struct brcmf_pub *drvr)
 	 */
 	fws->fw_signals = true;
 	ifp = brcmf_get_ifp(drvr, 0);
-	if (brcmf_fil_iovar_int_set(ifp, "tlv", tlv)) {
+	if (brcmf_fil_iovar_int_set(ifp, "tlv", tlv, NULL)) {
 		bphy_err(drvr, "failed to set bdcv2 tlv signaling\n");
 		fws->fcmode = BRCMF_FWS_FCMODE_NONE;
 		fws->fw_signals = false;
 	}
 
-	if (brcmf_fil_iovar_int_set(ifp, "ampdu_hostreorder", 1))
+	if (brcmf_fil_iovar_int_set(ifp, "ampdu_hostreorder", 1, NULL))
 		brcmf_dbg(INFO, "enabling AMPDU host-reorder failed\n");
 
 	/* Enable seq number reuse, if supported */
 	mode = 0;
-	if (brcmf_fil_iovar_int_get(ifp, "wlfc_mode", &fw_caps) == 0) {
+	if (brcmf_fil_iovar_int_get(ifp, "wlfc_mode", &fw_caps, NULL) == 0) {
 		brcmf_dbg(INFO, "wlfc_mode fw_caps=0x%x\n", fw_caps);
 
 		if (BRCMF_FWS_MODE_IS_OLD_DEF(fw_caps)) {
@@ -2688,7 +2688,7 @@ struct brcmf_fws_info *brcmf_fws_attach(struct brcmf_pub *drvr)
 				mode = brcmf_fws_mode_set_afq(mode, 0);
 		}
 
-		rc = brcmf_fil_iovar_int_set(ifp, "wlfc_mode", mode);
+		rc = brcmf_fil_iovar_int_set(ifp, "wlfc_mode", mode, NULL);
 	}
 
 	fws->wlfc_mode = 0;

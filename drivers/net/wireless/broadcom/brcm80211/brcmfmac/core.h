@@ -198,7 +198,6 @@ enum brcmf_netif_stop_reason {
  * @netif_stop_lock: spinlock for update netif_stop from multiple sources.
  * @pend_8021x_cnt: tracks outstanding number of 802.1x frames.
  * @pend_8021x_wait: used for signalling change in count.
- * @fwil_fwerr: flag indicating fwil layer should return firmware error codes.
  */
 struct brcmf_if {
 	struct brcmf_pub *drvr;
@@ -217,7 +216,6 @@ struct brcmf_if {
 	wait_queue_head_t pend_8021x_wait;
 	struct in6_addr ipv6_addr_tbl[NDOL_MAX_ENTRIES];
 	u8 ipv6addr_idx;
-	bool fwil_fwerr;
 	struct list_head sta_list;              /* dll of associated stations */
 	spinlock_t sta_list_lock;
 	struct list_head twt_sess_list;         /* dll of TWT sessions */

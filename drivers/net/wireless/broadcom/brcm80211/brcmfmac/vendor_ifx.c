@@ -255,7 +255,7 @@ int ifx_cfg80211_vndr_cmds_bsscolor(struct wiphy *wiphy,
 		 * call the parent iovar "he" with the subcmd filled and
 		 * passed along ./iw dev wlan0 vendor recv 0x000319 0x10 0xa
 		 */
-		ret = brcmf_fil_iovar_data_get(ifp, "he", param, sizeof(param));
+		ret = brcmf_fil_iovar_data_get(ifp, "he", param, sizeof(param), NULL);
 		if (ret) {
 			brcmf_err("get he bss_color error:%d\n", ret);
 		} else {
@@ -291,7 +291,7 @@ int ifx_cfg80211_vndr_cmds_muedca_opt(struct wiphy *wiphy,
 		 * filled and passed along
 		 * ./iw dev wlan0 vendor recv 0x000319 0xb 0xa
 		 */
-		ret = brcmf_fil_iovar_data_get(ifp, "he", param, sizeof(param));
+		ret = brcmf_fil_iovar_data_get(ifp, "he", param, sizeof(param), NULL);
 		if (ret) {
 			brcmf_err("get he muedca_opt_enable error:%d\n", ret);
 		} else {
@@ -303,7 +303,7 @@ int ifx_cfg80211_vndr_cmds_muedca_opt(struct wiphy *wiphy,
 		he_tlv->len = cpu_to_le16(1);
 		he_tlv->data[0] = val;
 		ret = brcmf_fil_iovar_data_set(ifp, "he",
-					       param, sizeof(param));
+					       param, sizeof(param), NULL);
 		if (ret)
 			brcmf_err("set he muedca_opt_enable error:%d\n", ret);
 	}
@@ -325,7 +325,7 @@ int ifx_cfg80211_vndr_cmds_amsdu(struct wiphy *wiphy,
 	ifp = vif->ifp;
 
 	if (val == 0xa) {
-		ret = brcmf_fil_iovar_int_get(ifp, "amsdu", &get_amsdu);
+		ret = brcmf_fil_iovar_int_get(ifp, "amsdu", &get_amsdu, NULL);
 		if (ret) {
 			brcmf_err("get amsdu error:%d\n", ret);
 
@@ -336,7 +336,7 @@ int ifx_cfg80211_vndr_cmds_amsdu(struct wiphy *wiphy,
 		ifx_cfg80211_vndr_send_cmd_reply(
 						wiphy, &get_amsdu, sizeof(int));
 	} else {
-		ret = brcmf_fil_iovar_int_set(ifp, "amsdu", val);
+		ret = brcmf_fil_iovar_int_set(ifp, "amsdu", val, NULL);
 		if (ret)
 			brcmf_err("set amsdu error:%d\n", ret);
 	}
@@ -358,7 +358,7 @@ int ifx_cfg80211_vndr_cmds_ldpc_cap(struct wiphy *wiphy,
 	ifp = vif->ifp;
 
 	if (val == 0xa) {
-		ret = brcmf_fil_iovar_int_get(ifp, "ldpc_cap", &buf);
+		ret = brcmf_fil_iovar_int_get(ifp, "ldpc_cap", &buf, NULL);
 		if (ret) {
 			brcmf_err("get ldpc_cap error:%d\n", ret);
 
@@ -368,7 +368,7 @@ int ifx_cfg80211_vndr_cmds_ldpc_cap(struct wiphy *wiphy,
 		brcmf_dbg(INFO, "get ldpc_cap: %d\n", buf);
 		ifx_cfg80211_vndr_send_cmd_reply(wiphy, &buf, sizeof(int));
 	} else {
-		ret = brcmf_fil_iovar_int_set(ifp, "ldpc_cap", val);
+		ret = brcmf_fil_iovar_int_set(ifp, "ldpc_cap", val, NULL);
 		if (ret)
 			brcmf_err("set ldpc_cap error:%d\n", ret);
 	}
@@ -402,7 +402,7 @@ int ifx_cfg80211_vndr_cmds_oce_enable(struct wiphy *wiphy,
 		 * ./iw dev wlan0 vendor recv 0x000319 0xf 0xa
 		 */
 		ret = brcmf_fil_iovar_data_get(ifp, "oce",
-					       param, sizeof(param));
+					       param, sizeof(param), NULL);
 		if (ret) {
 			brcmf_err("get oce enable error:%d\n", ret);
 		} else {
@@ -417,7 +417,7 @@ int ifx_cfg80211_vndr_cmds_oce_enable(struct wiphy *wiphy,
 		oce_xtlv->len = cpu_to_le16(1);
 		oce_xtlv->data[0] = val;
 		ret = brcmf_fil_iovar_data_set(ifp, "oce",
-					       param, sizeof(param));
+					       param, sizeof(param), NULL);
 		if (ret)
 			brcmf_err("set oce enable error:%d\n", ret);
 	}
@@ -466,7 +466,7 @@ int ifx_cfg80211_vndr_cmds_randmac(struct wiphy *wiphy,
 		 * ./iw dev wlan0 vendor recv 0x000319 0x11 0xa
 		 */
 		memcpy(buf, (void *)&iov_buf, iov_buf.len);
-		ret = brcmf_fil_iovar_data_get(ifp, "randmac", (void *)buf, sizeof(buf));
+		ret = brcmf_fil_iovar_data_get(ifp, "randmac", (void *)buf, sizeof(buf), NULL);
 		if (ret) {
 			brcmf_err("Failed to get randmac enable or disable: %d\n", ret);
 		} else {
@@ -610,7 +610,7 @@ int ifx_cfg80211_vndr_cmds_mbo(struct wiphy *wiphy,
 	mbo_xtlv->len = cpu_to_le16(buf_len);
 	mbo_iov->len = cpu_to_le16(buf_len);
 	buf_len += sizeof(struct bcm_iov_buf);
-	ret = brcmf_fil_iovar_data_set(ifp, "mbo", param, buf_len);
+	ret = brcmf_fil_iovar_data_set(ifp, "mbo", param, buf_len, NULL);
 
 	if (ret)
 		brcmf_err("set mbo enable error:%d\n", ret);
@@ -632,7 +632,7 @@ int ifx_cfg80211_vndr_cmds_mpc(struct wiphy *wiphy,
 	ifp = vif->ifp;
 
 	if (val == 0xa) {
-		ret = brcmf_fil_iovar_int_get(ifp, "mpc", &buf);
+		ret = brcmf_fil_iovar_int_get(ifp, "mpc", &buf, NULL);
 		if (ret) {
 			brcmf_err("get mpc error:%d\n", ret);
 			return ret;
@@ -641,7 +641,7 @@ int ifx_cfg80211_vndr_cmds_mpc(struct wiphy *wiphy,
 		brcmf_dbg(INFO, "get mpc: %d\n", buf);
 		ifx_cfg80211_vndr_send_cmd_reply(wiphy, &buf, sizeof(int));
 	} else {
-		ret = brcmf_fil_iovar_int_set(ifp, "mpc", val);
+		ret = brcmf_fil_iovar_int_set(ifp, "mpc", val, NULL);
 		if (ret)
 			brcmf_err("set mpc error:%d\n", ret);
 	}
@@ -663,7 +663,7 @@ int ifx_cfg80211_vndr_cmds_giantrx(struct wiphy *wiphy,
 	ifp = vif->ifp;
 
 	if (val == 0xa) {
-		ret = brcmf_fil_iovar_int_get(ifp, "giantrx", &buf);
+		ret = brcmf_fil_iovar_int_get(ifp, "giantrx", &buf, NULL);
 		if (ret) {
 			brcmf_err("get giantrx error:%d\n", ret);
 			return ret;
@@ -673,7 +673,7 @@ int ifx_cfg80211_vndr_cmds_giantrx(struct wiphy *wiphy,
 		ifx_cfg80211_vndr_send_cmd_reply(wiphy, &buf, sizeof(int));
 	} else {
 		brcmf_fil_cmd_int_set(ifp, BRCMF_C_DOWN, 1);
-		ret = brcmf_fil_iovar_int_set(ifp, "giantrx", val);
+		ret = brcmf_fil_iovar_int_set(ifp, "giantrx", val, NULL);
 		brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1);
 		if (ret)
 			brcmf_err("set giantrx error:%d\n", ret);
@@ -749,12 +749,12 @@ int ifx_cfg80211_vndr_cmds_wnm_max_idle(struct wiphy *wiphy,
 		if (get_info) {
 			int get_period = 0;
 
-			ret = brcmf_fil_iovar_int_get(ifp, "wnm_maxidle", &get_period);
+			ret = brcmf_fil_iovar_int_get(ifp, "wnm_maxidle", &get_period, NULL);
 			if (!ret)
 				ret = ifx_cfg80211_vndr_send_cmd_reply(
 					wiphy, &get_period, sizeof(get_period));
 		} else
-			ret = brcmf_fil_iovar_data_set(ifp, "wnm_maxidle", param, buf_len);
+			ret = brcmf_fil_iovar_data_set(ifp, "wnm_maxidle", param, buf_len, NULL);
 	}
 	break;
 
@@ -813,7 +813,7 @@ int ifx_cfg80211_vndr_cmds_wnm_wl_cap(struct wiphy *wiphy,
 	ifp = vif->ifp;
 
 	if (val == 0xffff) {
-		ret = brcmf_fil_iovar_int_get(ifp, "wnm", &buf);
+		ret = brcmf_fil_iovar_int_get(ifp, "wnm", &buf, NULL);
 		if (ret) {
 			brcmf_err("get wnm_wl_cap error:%d\n", ret);
 			return ret;
@@ -822,7 +822,7 @@ int ifx_cfg80211_vndr_cmds_wnm_wl_cap(struct wiphy *wiphy,
 		brcmf_dbg(INFO, "get wnm_wl_cap: %d\n", buf);
 		ifx_cfg80211_vndr_send_cmd_reply(wiphy, &buf, sizeof(int));
 	} else {
-		ret = brcmf_fil_iovar_int_set(ifp, "wnm", val);
+		ret = brcmf_fil_iovar_int_set(ifp, "wnm", val, NULL);
 		if (ret)
 			brcmf_err("set wnm_wl_cap error:%d\n", ret);
 	}
@@ -960,7 +960,7 @@ int ifx_vndr_cmdstr_mkeep_alive(struct wiphy *wiphy, struct wireless_dev *wdev,
 			mkeep_alive->len_bytes = i;
 		}
 	}
-	ret = brcmf_fil_iovar_data_set(ifp, "mkeep_alive", buf, sizeof(buf));
+	ret = brcmf_fil_iovar_data_set(ifp, "mkeep_alive", buf, sizeof(buf), NULL);
 	if (ret)
 		brcmf_err("Failed to set mkeeplive params: %d\n", ret);
 
@@ -1017,7 +1017,7 @@ int ifx_vndr_cmdstr_tko(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	length = offsetof(struct ifx_tko, data) + tko->len;
-	ret = brcmf_fil_iovar_data_set(ifp, "tko", buf, length);
+	ret = brcmf_fil_iovar_data_set(ifp, "tko", buf, length, NULL);
 	if (ret)
 		brcmf_err("Failed to configure tko: %d\n", ret);
 
@@ -1145,7 +1145,7 @@ int ifx_vndr_icmp_echo_req_config(struct brcmf_if *ifp, u8 cmd_type,
 	if (icmp_echo_req_cmd->cmd_type == WL_ICMP_ECHO_REQ_INFO) {
 		icmp_echo_req_get_info = (struct ifx_icmp_echo_req_get_info *)cfg->extra_buf;
 		ret = brcmf_fil_iovar_data_get(ifp, "icmp_echo_req", cfg->extra_buf,
-					       WL_EXTRA_BUF_MAX);
+					       WL_EXTRA_BUF_MAX, NULL);
 		if (ret)
 			brcmf_err("Failed to get icmp_echo_req info: %d\n", ret);
 		else
@@ -1153,7 +1153,7 @@ int ifx_vndr_icmp_echo_req_config(struct brcmf_if *ifp, u8 cmd_type,
 							 icmp_echo_req_get_info->length);
 	} else {
 		ret = brcmf_fil_iovar_data_set(ifp, "icmp_echo_req", (u8 *)icmp_echo_req_cmd,
-					       icmp_echo_req_cmd->length);
+					       icmp_echo_req_cmd->length, NULL);
 		if (ret)
 			brcmf_err("Failed to configure icmp_echo_req: %d\n", ret);
 	}
@@ -1477,7 +1477,7 @@ int ifx_cfg80211_vndr_cmds_ssid_prot(struct wiphy *wiphy,
 		attr_type = nla_type(attr_iter);
 		if (attr_type == IFX_VENDOR_ATTR_SSID_PROT_ENABLE) {
 			val = nla_get_u8(attr_iter);
-			ret = brcmf_fil_iovar_int_set(ifp, "ssid_protection", val);
+			ret = brcmf_fil_iovar_int_set(ifp, "ssid_protection", val, NULL);
 			if (ret < 0)
 				brcmf_err("Failed set ssid_protection, ret=%d\n", ret);
 			else
@@ -1531,7 +1531,7 @@ int ifx_cfg80211_vndr_cmds_rrm_cap(struct wiphy *wiphy, struct wireless_dev *wde
 			return -EINVAL;
 		}
 		/* Handle GET */
-		ret = brcmf_fil_iovar_data_get(ifp, "rrm", &buf, sizeof(buf));
+		ret = brcmf_fil_iovar_data_get(ifp, "rrm", &buf, sizeof(buf), NULL);
 		if (ret) {
 			brcmf_err("get rrm error:%d\n", ret);
 			return ret;
@@ -1544,7 +1544,7 @@ int ifx_cfg80211_vndr_cmds_rrm_cap(struct wiphy *wiphy, struct wireless_dev *wde
 			return -EINVAL;
 		/* Handle SET */
 		memcpy(&buf, (u8 *)data + RRM_CAP_CMD_LEN, sizeof(u64));
-		ret = brcmf_fil_iovar_data_set(ifp, "rrm", &buf, sizeof(buf));
+		ret = brcmf_fil_iovar_data_set(ifp, "rrm", &buf, sizeof(buf), NULL);
 		if (ret) {
 			brcmf_err("set rrm:%d\n", ret);
 			return ret;

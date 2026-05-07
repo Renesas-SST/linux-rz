@@ -124,7 +124,7 @@ static void brcmf_feat_wlc_version_overrides(struct brcmf_pub *drv)
 	struct brcmf_wlc_version_le ver;
 	int err, major, minor;
 
-	err = brcmf_fil_iovar_data_get(ifp, "wlc_ver", &ver, sizeof(ver));
+	err = brcmf_fil_iovar_data_get(ifp, "wlc_ver", &ver, sizeof(ver), NULL);
 	if (err)
 		return;
 
@@ -146,20 +146,16 @@ static void brcmf_feat_iovar_int_get(struct brcmf_if *ifp,
 {
 	u32 data;
 	int err;
+	int fwret = 0;
 
-	/* we need to know firmware error */
-	ifp->fwil_fwerr = true;
-
-	err = brcmf_fil_iovar_int_get(ifp, name, &data);
-	if (err != -BRCMF_FW_UNSUPPORTED) {
+	err = brcmf_fil_iovar_int_get(ifp, name, &data, &fwret);
+	if (!err && fwret != -BRCMF_FW_UNSUPPORTED) {
 		brcmf_dbg(INFO, "enabling feature: %s\n", brcmf_feat_names[id]);
 		ifp->drvr->feat_flags[id / 8] |= BIT(id % 8);
 	} else {
 		brcmf_dbg(TRACE, "%s feature check failed: %d\n",
 			  brcmf_feat_names[id], err);
 	}
-
-	ifp->fwil_fwerr = false;
 }
 
 static void brcmf_feat_iovar_data_set(struct brcmf_if *ifp,
@@ -167,20 +163,16 @@ static void brcmf_feat_iovar_data_set(struct brcmf_if *ifp,
 				      const void *data, size_t len)
 {
 	int err;
+	int fwret = 0;
 
-	/* we need to know firmware error */
-	ifp->fwil_fwerr = true;
-
-	err = brcmf_fil_iovar_data_set(ifp, name, data, len);
-	if (err != -BRCMF_FW_UNSUPPORTED) {
+	err = brcmf_fil_iovar_data_set(ifp, name, data, len, &fwret);
+	if (!err && fwret != -BRCMF_FW_UNSUPPORTED) {
 		brcmf_dbg(INFO, "enabling feature: %s\n", brcmf_feat_names[id]);
 		ifp->drvr->feat_flags[id / 8] |= BIT(id % 8);
 	} else {
 		brcmf_dbg(TRACE, "%s feature check failed: %d\n",
 			  brcmf_feat_names[id], err);
 	}
-
-	ifp->fwil_fwerr = false;
 }
 
 static void brcmf_feat_iovar_enab_get(struct brcmf_if *ifp,
@@ -189,22 +181,18 @@ static void brcmf_feat_iovar_enab_get(struct brcmf_if *ifp,
 {
 	int err;
 	u8 val;
-
-	/* we need to know firmware error */
-	ifp->fwil_fwerr = true;
+	int fwret = 0;
 
 	err = brcmf_fil_xtlv_data_get(ifp, name, subcmd_id,
-				      (void *)&val, sizeof(val));
+				      (void *)&val, sizeof(val), &fwret);
 
-	if (!err) {
+	if (!err && !fwret) {
 		brcmf_dbg(INFO, "enabling feature: %s\n", brcmf_feat_names[id]);
 		ifp->drvr->feat_flags[id / 8] |= BIT(id % 8);
 	} else {
 		brcmf_dbg(TRACE, "%s feature check failed: %d\n",
 			  brcmf_feat_names[id], err);
 	}
-
-	ifp->fwil_fwerr = false;
 }
 
 #define MAX_CAPS_BUFFER_SIZE	768
@@ -215,7 +203,7 @@ static void brcmf_feat_firmware_capabilities(struct brcmf_if *ifp)
 	enum brcmf_feat_id id;
 	int i, err;
 
-	err = brcmf_fil_iovar_data_get(ifp, "cap", caps, sizeof(caps));
+	err = brcmf_fil_iovar_data_get(ifp, "cap", caps, sizeof(caps), NULL);
 	if (err) {
 		bphy_err(drvr, "could not get firmware cap (%d)\n", err);
 		return;
@@ -248,7 +236,7 @@ static int brcmf_feat_fwcap_debugfs_read(struct seq_file *seq, void *data)
 	char *tmp;
 	int err;
 
-	err = brcmf_fil_iovar_data_get(ifp, "cap", caps, sizeof(caps));
+	err = brcmf_fil_iovar_data_get(ifp, "cap", caps, sizeof(caps), NULL);
 	if (err) {
 		bphy_err(drvr, "could not get firmware cap (%d)\n", err);
 		return err;
@@ -291,7 +279,7 @@ void brcmf_feat_attach(struct brcmf_pub *drvr)
 	if (drvr->bus_if->wowl_supported)
 		brcmf_feat_iovar_int_get(ifp, BRCMF_FEAT_WOWL, "wowl");
 	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_WOWL)) {
-		err = brcmf_fil_iovar_int_get(ifp, "wowl_cap", &wowl_cap);
+		err = brcmf_fil_iovar_int_get(ifp, "wowl_cap", &wowl_cap, NULL);
 		if (!err) {
 			ifp->drvr->feat_flags[BRCMF_FEAT_WOWL_ARP_ND / 8] |=
 				BIT(BRCMF_FEAT_WOWL_ARP_ND % 8);
@@ -320,7 +308,7 @@ void brcmf_feat_attach(struct brcmf_pub *drvr)
 
 	pfn_mac.version = BRCMF_PFN_MACADDR_CFG_VER;
 	err = brcmf_fil_iovar_data_get(ifp, "pfn_macaddr", &pfn_mac,
-				       sizeof(pfn_mac));
+				       sizeof(pfn_mac), NULL);
 	if (!err)
 		ifp->drvr->feat_flags[BRCMF_FEAT_SCAN_RANDOM_MAC / 8] |=
 			BIT(BRCMF_FEAT_SCAN_RANDOM_MAC % 8);

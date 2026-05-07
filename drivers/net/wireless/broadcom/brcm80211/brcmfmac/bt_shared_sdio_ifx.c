@@ -920,7 +920,7 @@ static bool inf_btsdio_is_over_sdio(struct brcmf_bus *bus_if)
 		break;
 	case SDIO_DEVICE_ID_CYPRESS_55500:
 		/* should enable feature in OTP */
-		err = brcmf_fil_iovar_int_get(ifp, "bt_over_sdio", &bt_over_sdio_hw);
+		err = brcmf_fil_iovar_int_get(ifp, "bt_over_sdio", &bt_over_sdio_hw, NULL);
 		if (err < 0) {
 			bt_over_sdio_hw = 0;
 			brcmf_err("failed to get bt_over_sdio\n");

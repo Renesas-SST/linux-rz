@@ -498,7 +498,7 @@ int brcmf_fweh_activate_events(struct brcmf_if *ifp)
 		return 0;
 
 	err = brcmf_fil_iovar_data_set(ifp, "event_msgs", fweh->event_mask,
-				       fweh->event_mask_len);
+				       fweh->event_mask_len, NULL);
 	if (err)
 		bphy_err(fweh->drvr, "Set event_msgs error (%d)\n", err);
 	return err;

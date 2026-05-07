@@ -394,12 +394,12 @@ static int brcmf_p2p_set_firmware(struct brcmf_if *ifp, u8 *p2p_mac)
 	struct brcmf_pub *drvr = ifp->drvr;
 	s32 ret = 0, apsta = 0;
 
-	ret = brcmf_fil_iovar_int_get(ifp, "apsta", &apsta);
+	ret = brcmf_fil_iovar_int_get(ifp, "apsta", &apsta, NULL);
 	if (ret) {
 		bphy_err(drvr, "failed to query apsta IOVAR");
 	} else if (!apsta) {
 		if (brcmf_fil_cmd_int_set(ifp, BRCMF_C_DOWN, 1) ||
-		    brcmf_fil_iovar_int_set(ifp, "apsta", 1) ||
+		    brcmf_fil_iovar_int_set(ifp, "apsta", 1, NULL) ||
 		    brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1)) {
 			bphy_err(drvr, "failed to set apsta IOVAR");
 		}
@@ -410,10 +410,10 @@ static int brcmf_p2p_set_firmware(struct brcmf_if *ifp, u8 *p2p_mac)
 	 * firmware for P2P device address. This must be done with discovery
 	 * disabled.
 	 */
-	brcmf_fil_iovar_int_set(ifp, "p2p_disc", 0);
+	brcmf_fil_iovar_int_set(ifp, "p2p_disc", 0, NULL);
 
 	ret = brcmf_fil_iovar_data_set(ifp, "p2p_da_override", p2p_mac,
-				       ETH_ALEN);
+				       ETH_ALEN, NULL);
 	if (ret)
 		bphy_err(drvr, "failed to update device address ret %d\n", ret);
 
@@ -539,7 +539,7 @@ static s32 brcmf_p2p_deinit_discovery(struct brcmf_p2p_info *p2p)
 
 	/* Disable P2P discovery in the firmware */
 	vif = p2p->bss_idx[P2PAPI_BSSCFG_PRIMARY].vif;
-	(void)brcmf_fil_iovar_int_set(vif->ifp, "p2p_disc", 0);
+	(void)brcmf_fil_iovar_int_set(vif->ifp, "p2p_disc", 0, NULL);
 
 	return 0;
 }
@@ -572,7 +572,7 @@ static int brcmf_p2p_enable_discovery(struct brcmf_p2p_info *p2p)
 
 	/* Re-initialize P2P Discovery in the firmware */
 	vif = p2p->bss_idx[P2PAPI_BSSCFG_PRIMARY].vif;
-	ret = brcmf_fil_iovar_int_set(vif->ifp, "p2p_disc", 1);
+	ret = brcmf_fil_iovar_int_set(vif->ifp, "p2p_disc", 1, NULL);
 	if (ret < 0) {
 		bphy_err(drvr, "set p2p_disc error\n");
 		goto exit;
@@ -2083,7 +2083,7 @@ int brcmf_p2p_ifchange(struct brcmf_cfg80211_info *cfg,
 
 	brcmf_cfg80211_arm_vif_event(cfg, vif);
 	err = brcmf_fil_iovar_data_set(vif->ifp, "p2p_ifupd", &if_request,
-				       sizeof(if_request));
+				       sizeof(if_request), NULL);
 	if (err) {
 		bphy_err(drvr, "p2p_ifupd FAILED, err=%d\n", err);
 		brcmf_cfg80211_arm_vif_event(cfg, NULL);
@@ -2120,7 +2120,7 @@ static int brcmf_p2p_request_p2p_if(struct brcmf_p2p_info *p2p,
 	if_request.chspec = cpu_to_le16(chanspec);
 
 	err = brcmf_fil_iovar_data_set(ifp, "p2p_ifadd", &if_request,
-				       sizeof(if_request));
+				       sizeof(if_request), NULL);
 
 	return err;
 }
@@ -2132,7 +2132,7 @@ static int brcmf_p2p_disable_p2p_if(struct brcmf_cfg80211_vif *vif)
 	struct brcmf_if *ifp = netdev_priv(pri_ndev);
 	const u8 *addr = vif->wdev.netdev->dev_addr;
 
-	return brcmf_fil_iovar_data_set(ifp, "p2p_ifdis", addr, ETH_ALEN);
+	return brcmf_fil_iovar_data_set(ifp, "p2p_ifdis", addr, ETH_ALEN, NULL);
 }
 
 static int brcmf_p2p_release_p2p_if(struct brcmf_cfg80211_vif *vif)
@@ -2142,7 +2142,7 @@ static int brcmf_p2p_release_p2p_if(struct brcmf_cfg80211_vif *vif)
 	struct brcmf_if *ifp = netdev_priv(pri_ndev);
 	const u8 *addr = vif->wdev.netdev->dev_addr;
 
-	return brcmf_fil_iovar_data_set(ifp, "p2p_ifdel", addr, ETH_ALEN);
+	return brcmf_fil_iovar_data_set(ifp, "p2p_ifdel", addr, ETH_ALEN, NULL);
 }
 
 /**
@@ -2188,7 +2188,7 @@ static struct wireless_dev *brcmf_p2p_create_p2pdev(struct brcmf_p2p_info *p2p,
 	brcmf_fweh_p2pdev_setup(pri_ifp, true);
 
 	/* Initialize P2P Discovery in the firmware */
-	err = brcmf_fil_iovar_int_set(pri_ifp, "p2p_disc", 1);
+	err = brcmf_fil_iovar_int_set(pri_ifp, "p2p_disc", 1, NULL);
 	if (err < 0) {
 		bphy_err(drvr, "set p2p_disc error\n");
 		brcmf_fweh_p2pdev_setup(pri_ifp, false);
@@ -2214,7 +2214,7 @@ static struct wireless_dev *brcmf_p2p_create_p2pdev(struct brcmf_p2p_info *p2p,
 	memcpy(&p2p_vif->wdev.address, p2p->dev_addr, sizeof(p2p->dev_addr));
 
 	/* verify bsscfg index for P2P discovery */
-	err = brcmf_fil_iovar_int_get(pri_ifp, "p2p_dev", &bsscfgidx);
+	err = brcmf_fil_iovar_int_get(pri_ifp, "p2p_dev", &bsscfgidx, NULL);
 	if (err < 0) {
 		bphy_err(drvr, "retrieving discover bsscfg index failed\n");
 		goto fail;
@@ -2349,7 +2349,7 @@ struct wireless_dev *brcmf_p2p_add_vif(struct wiphy *wiphy, const char *name,
 
 	cfg->p2p.bss_idx[connidx].vif = vif;
 	/* Disable firmware roaming for P2P interface  */
-	brcmf_fil_iovar_int_set(ifp, "roam_off", 1);
+	brcmf_fil_iovar_int_set(ifp, "roam_off", 1, NULL);
 	if (iftype == BRCMF_FIL_P2P_IF_GO) {
 		/* set station timeout for p2p */
 		brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_SCB_TIMEOUT,

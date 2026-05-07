@@ -99,7 +99,7 @@ static int brcmf_pno_channel_config(struct brcmf_if *ifp,
 	cfg->reporttype = 0;
 	cfg->flags = 0;
 
-	return brcmf_fil_iovar_data_set(ifp, "pfn_cfg", cfg, sizeof(*cfg));
+	return brcmf_fil_iovar_data_set(ifp, "pfn_cfg", cfg, sizeof(*cfg), NULL);
 }
 
 static int brcmf_pno_config(struct brcmf_if *ifp, u32 scan_freq,
@@ -127,13 +127,13 @@ static int brcmf_pno_config(struct brcmf_if *ifp, u32 scan_freq,
 		pfnmem = bestn;
 
 		/* set bestn in firmware */
-		err = brcmf_fil_iovar_int_set(ifp, "pfnmem", pfnmem);
+		err = brcmf_fil_iovar_int_set(ifp, "pfnmem", pfnmem, NULL);
 		if (err < 0) {
 			bphy_err(drvr, "failed to set pfnmem\n");
 			goto exit;
 		}
 		/* get max mscan which the firmware supports */
-		err = brcmf_fil_iovar_int_get(ifp, "pfnmem", &pfnmem);
+		err = brcmf_fil_iovar_int_get(ifp, "pfnmem", &pfnmem, NULL);
 		if (err < 0) {
 			bphy_err(drvr, "failed to get pfnmem\n");
 			goto exit;
@@ -147,7 +147,7 @@ static int brcmf_pno_config(struct brcmf_if *ifp, u32 scan_freq,
 
 	pfn_param.flags = cpu_to_le16(flags);
 	err = brcmf_fil_iovar_data_set(ifp, "pfn_set", &pfn_param,
-				       sizeof(pfn_param));
+				       sizeof(pfn_param), NULL);
 	if (err)
 		bphy_err(drvr, "pfn_set failed, err=%d\n", err);
 
@@ -190,7 +190,7 @@ static int brcmf_pno_set_random(struct brcmf_if *ifp, struct brcmf_pno_info *pi)
 	brcmf_dbg(SCAN, "enabling random mac: reqid=%llu mac=%pM\n",
 		  pi->reqs[ri]->reqid, pfn_mac.mac);
 	err = brcmf_fil_iovar_data_set(ifp, "pfn_macaddr", &pfn_mac,
-				       sizeof(pfn_mac));
+				       sizeof(pfn_mac), NULL);
 	if (err)
 		bphy_err(drvr, "pfn_macaddr failed, err=%d\n", err);
 
@@ -215,7 +215,7 @@ static int brcmf_pno_add_ssid(struct brcmf_if *ifp, struct cfg80211_ssid *ssid,
 	memcpy(pfn.ssid.SSID, ssid->ssid, ssid->ssid_len);
 
 	brcmf_dbg(SCAN, "adding ssid=%.32s (active=%d)\n", ssid->ssid, active);
-	err = brcmf_fil_iovar_data_set(ifp, "pfn_add", &pfn, sizeof(pfn));
+	err = brcmf_fil_iovar_data_set(ifp, "pfn_add", &pfn, sizeof(pfn), NULL);
 	if (err < 0)
 		bphy_err(drvr, "adding failed: err=%d\n", err);
 	return err;
@@ -232,7 +232,7 @@ static int brcmf_pno_add_bssid(struct brcmf_if *ifp, const u8 *bssid)
 
 	brcmf_dbg(SCAN, "adding bssid=%pM\n", bssid);
 	err = brcmf_fil_iovar_data_set(ifp, "pfn_add_bssid", &bssid_cfg,
-				       sizeof(bssid_cfg));
+				       sizeof(bssid_cfg), NULL);
 	if (err < 0)
 		bphy_err(drvr, "adding failed: err=%d\n", err);
 	return err;
@@ -262,10 +262,10 @@ static int brcmf_pno_clean(struct brcmf_if *ifp)
 	int ret;
 
 	/* Disable pfn */
-	ret = brcmf_fil_iovar_int_set(ifp, "pfn", 0);
+	ret = brcmf_fil_iovar_int_set(ifp, "pfn", 0, NULL);
 	if (ret == 0) {
 		/* clear pfn */
-		ret = brcmf_fil_iovar_data_set(ifp, "pfnclear", NULL, 0);
+		ret = brcmf_fil_iovar_data_set(ifp, "pfnclear", NULL, 0, NULL);
 	}
 	if (ret < 0)
 		bphy_err(drvr, "failed code %d\n", ret);
@@ -440,7 +440,7 @@ static int brcmf_pno_config_sched_scans(struct brcmf_if *ifp)
 	memcpy(gscan_cfg->bucket, buckets,
 	       array_size(n_buckets, sizeof(*buckets)));
 
-	err = brcmf_fil_iovar_data_set(ifp, "pfn_gscan_cfg", gscan_cfg, gsz);
+	err = brcmf_fil_iovar_data_set(ifp, "pfn_gscan_cfg", gscan_cfg, gsz, NULL);
 
 	if (err < 0)
 		goto clean;
@@ -455,7 +455,7 @@ static int brcmf_pno_config_sched_scans(struct brcmf_if *ifp)
 		goto clean;
 
 	/* Enable the PNO */
-	err = brcmf_fil_iovar_int_set(ifp, "pfn", 1);
+	err = brcmf_fil_iovar_int_set(ifp, "pfn", 1, NULL);
 
 clean:
 	if (err < 0)
@@ -624,7 +624,7 @@ int pfn_send_network_blob_fw(struct wiphy *wiphy,
 	brcmf_pno_clean(ifp);
 
 	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_FWSUP)) {
-		ret = brcmf_fil_iovar_int_set(ifp, "sup_wpa", 1);
+		ret = brcmf_fil_iovar_int_set(ifp, "sup_wpa", 1, NULL);
 		if (ret) {
 			brcmf_err("sup_wpa set error:%d\n", ret);
 			return ret;
@@ -660,7 +660,7 @@ int pfn_send_network_blob_fw(struct wiphy *wiphy,
 	pfn_param.slow_freq = cpu_to_le32(0);
 
 	ret = brcmf_fil_iovar_data_set(ifp, "pfn_set", (void *)&pfn_param,
-				       sizeof(struct brcm_pfn_param));
+				       sizeof(struct brcm_pfn_param), NULL);
 	if (ret) {
 		brcmf_err("set pfn_set enable error:%d\n", ret);
 		return ret;
@@ -733,14 +733,14 @@ int pfn_send_network_blob_fw(struct wiphy *wiphy,
 	if (cfg->pfn_data.count > (BRCMF_PNO_MAX_PFN_COUNT / 2)) {
 		offset = sizeof(struct brcm_pfn) * (BRCMF_PNO_MAX_PFN_COUNT / 2);
 		ret = brcmf_fil_iovar_data_set(ifp, "pfn_add", (void *)pfn_list_buffer,
-					       offset);
+					       offset, NULL);
 		if (ret) {
 			brcmf_err("set pfnadd enable error:%d\n", ret);
 			return ret;
 		}
 
 		ret = brcmf_fil_iovar_data_set(ifp, "pfn_add", (void *)pfn_list_buffer + offset,
-					       brcm_pfn_length - offset);
+					       brcm_pfn_length - offset, NULL);
 		if (ret) {
 			brcmf_err("set pfnadd enable error:%d\n", ret);
 			return ret;
@@ -748,14 +748,14 @@ int pfn_send_network_blob_fw(struct wiphy *wiphy,
 
 	} else {
 		ret = brcmf_fil_iovar_data_set(ifp, "pfn_add", (void *)pfn_list_buffer,
-					       brcm_pfn_length);
+					       brcm_pfn_length, NULL);
 	}
 
 	if (ret) {
 		brcmf_err("set pfnadd enable error:%d\n", ret);
 		return ret;
 	}
-	ret =  brcmf_fil_iovar_int_set(ifp, "pfn", PFN_SET);
+	ret =  brcmf_fil_iovar_int_set(ifp, "pfn", PFN_SET, NULL);
 	if (ret) {
 		brcmf_err("set pfn error:%d\n", ret);
 		return ret;

@@ -3154,7 +3154,7 @@ brcmf_sdio_ulp_preinit(struct device *dev)
 	/* Query ulp_sdioctrl iovar to get the ULP related SHM offsets */
 	brcmf_fil_iovar_data_get(ifp, "ulp_sdioctrl",
 				 &sdiodev->fmac_ulp.ulp_shm_offset,
-				 sizeof(sdiodev->fmac_ulp.ulp_shm_offset));
+				 sizeof(sdiodev->fmac_ulp.ulp_shm_offset), NULL);
 
 	sdiodev->ulp = false;
 
@@ -5902,7 +5902,7 @@ static void brcmf_sdio_temp_monitor_work_handler(struct work_struct *work)
 		brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1);
 	}
 
-	err = brcmf_fil_iovar_int_get(ifp, "phy_tempsense", &current_temp);
+	err = brcmf_fil_iovar_int_get(ifp, "phy_tempsense", &current_temp, NULL);
 	if (err) {
 		brcmf_dbg(INFO, "L4 tuning: failed to get phy_tempsense, err=%d\n", err);
 		goto reschedule;

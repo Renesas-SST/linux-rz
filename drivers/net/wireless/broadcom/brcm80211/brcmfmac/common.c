@@ -200,7 +200,7 @@ void brcmf_generic_offload_config(struct brcmf_if *ifp, unsigned int ol_feat,
 	ol_cfg.u.ol_profile.type = ol_profile;
 
 	err = brcmf_fil_iovar_data_set(ifp, "offload_config", &ol_cfg,
-				       sizeof(ol_cfg));
+				       sizeof(ol_cfg), NULL);
 	if (err < 0)
 		brcmf_err("failed to %s generic offload profile:%u feat:0x%x, err = %d",
 			  reset ? "reset" : "set", ol_profile, ol_feat, err);
@@ -226,7 +226,7 @@ void brcmf_generic_offload_enable(struct brcmf_if *ifp, unsigned int ol_feat,
 	ol_cfg.offload_skip = ol_feat_skip;
 
 	err = brcmf_fil_iovar_data_set(ifp, "offload_config", &ol_cfg,
-				       sizeof(ol_cfg));
+				       sizeof(ol_cfg), NULL);
 	if (err < 0)
 		brcmf_err("failed to %s generic offload feat:0x%x, err = %d",
 			  enable ? "enable" : "disable", ol_feat, err);
@@ -250,7 +250,7 @@ void brcmf_generic_offload_host_ipv4_update(struct brcmf_if *ifp, unsigned int o
 	ol_cfg.offload_skip = ol_feat_skip;
 
 	err = brcmf_fil_iovar_data_set(ifp, "offload_config", &ol_cfg,
-				       sizeof(ol_cfg));
+				       sizeof(ol_cfg), NULL);
 	if (err < 0)
 		brcmf_err("failed to %s generic offload host address %pI4, err = %d",
 			  is_add ? "add" : "del", &ipaddr, err);
@@ -275,7 +275,7 @@ int brcmf_generic_offload_host_ipv6_update(struct brcmf_if *ifp, unsigned int ol
 	ol_cfg.offload_skip = ol_feat_skip;
 
 	err = brcmf_fil_iovar_data_set(ifp, "offload_config", &ol_cfg,
-				       sizeof(ol_cfg));
+				       sizeof(ol_cfg), NULL);
 	if (err < 0)
 		brcmf_err("failed to %s host address %pI6 err = %d",
 			  is_add ? "add" : "del", ptr, err);
@@ -303,7 +303,7 @@ void brcmf_c_set_joinpref_default(struct brcmf_if *ifp)
 	join_pref_params[1].rssi_gain = 0;
 	join_pref_params[1].band = 0;
 	err = brcmf_fil_iovar_data_set(ifp, "join_pref", join_pref_params,
-				       sizeof(join_pref_params));
+				       sizeof(join_pref_params), NULL);
 	if (err)
 		bphy_err(drvr, "Set join_pref error (%d)\n", err);
 }
@@ -321,7 +321,7 @@ static int brcmf_c_download(struct brcmf_if *ifp, u16 flag,
 	dload_buf->crc = cpu_to_le32(0);
 
 	err = brcmf_fil_iovar_data_set(ifp, var, dload_buf,
-				       struct_size(dload_buf, data, len));
+				       struct_size(dload_buf, data, len), NULL);
 
 	return err;
 }
@@ -372,7 +372,7 @@ static int brcmf_c_download_blob(struct brcmf_if *ifp,
 		bphy_err(drvr, "%s (%zu byte file) failed (%d)\n",
 			 loadvar, size, err);
 		/* Retrieve status and print */
-		err = brcmf_fil_iovar_int_get(ifp, statvar, &status);
+		err = brcmf_fil_iovar_int_get(ifp, statvar, &status, NULL);
 		if (err)
 			bphy_err(drvr, "get %s failed (%d)\n", statvar, err);
 		else
@@ -434,7 +434,7 @@ int brcmf_c_set_cur_etheraddr(struct brcmf_if *ifp, const u8 *addr)
 {
 	s32 err;
 
-	err = brcmf_fil_iovar_data_set(ifp, "cur_etheraddr", addr, ETH_ALEN);
+	err = brcmf_fil_iovar_data_set(ifp, "cur_etheraddr", addr, ETH_ALEN, NULL);
 	if (err < 0)
 		bphy_err(ifp->drvr, "Setting cur_etheraddr failed, %d\n", err);
 
@@ -495,7 +495,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 	} else {
 		/* retrieve mac address */
 		err = brcmf_fil_iovar_data_get(ifp, "cur_etheraddr", ifp->mac_addr,
-					       sizeof(ifp->mac_addr));
+					       sizeof(ifp->mac_addr), NULL);
 		if (err < 0) {
 			bphy_err(drvr, "Retrieving cur_etheraddr failed, %d\n", err);
 			goto done;
@@ -574,7 +574,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 
 	/* query for 'ver' to get version info from firmware */
 	memset(buf, 0, sizeof(buf));
-	err = brcmf_fil_iovar_data_get(ifp, "ver", buf, sizeof(buf));
+	err = brcmf_fil_iovar_data_get(ifp, "ver", buf, sizeof(buf), NULL);
 	if (err < 0) {
 		bphy_err(drvr, "Retrieving version information failed, %d\n",
 			 err);
@@ -598,7 +598,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 	/* Get wlc interface version, set to 0 for legacy chip
 	 * that is not supporting wlc_ver iovar
 	 */
-	err = brcmf_fil_iovar_data_get(ifp, "wlc_ver", &wlc_ver, sizeof(wlc_ver));
+	err = brcmf_fil_iovar_data_get(ifp, "wlc_ver", &wlc_ver, sizeof(wlc_ver), NULL);
 	if (err < 0) {
 		ifp->drvr->wlc_ver.wlc_ver_major = 0;
 		ifp->drvr->wlc_ver.wlc_ver_minor = 0;
@@ -612,7 +612,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 
 	/* Query for 'clmver' to get CLM version info from firmware */
 	memset(buf, 0, sizeof(buf));
-	err = brcmf_fil_iovar_data_get(ifp, "clmver", buf, sizeof(buf));
+	err = brcmf_fil_iovar_data_get(ifp, "clmver", buf, sizeof(buf), NULL);
 	if (err) {
 		brcmf_dbg(TRACE, "retrieving clmver failed, %d\n", err);
 	} else {
@@ -631,12 +631,12 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 	}
 
 	/* set apsta */
-	err = brcmf_fil_iovar_int_set(ifp, "apsta", 1);
+	err = brcmf_fil_iovar_int_set(ifp, "apsta", 1, NULL);
 	if (err)
 		brcmf_info("failed setting apsta, %d\n", err);
 
 	/* set mpc */
-	err = brcmf_fil_iovar_int_set(ifp, "mpc", 1);
+	err = brcmf_fil_iovar_int_set(ifp, "mpc", 1, NULL);
 	if (err) {
 		bphy_err(drvr, "failed setting mpc\n");
 		goto done;
@@ -646,7 +646,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 
 	/* Setup event_msgs, enable E_IF */
 	err = brcmf_fil_iovar_data_get(ifp, "event_msgs", fweh->event_mask,
-				       fweh->event_mask_len);
+				       fweh->event_mask_len, NULL);
 	if (err) {
 		bphy_err(drvr, "Get event_msgs error (%d)\n", err);
 		goto done;
@@ -659,7 +659,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 	 */
 	setbit(fweh->event_mask, BRCMF_E_IF);
 	err = brcmf_fil_iovar_data_set(ifp, "event_msgs", fweh->event_mask,
-				       fweh->event_mask_len);
+				       fweh->event_mask_len, NULL);
 	if (err) {
 		bphy_err(drvr, "Set event_msgs error (%d)\n", err);
 		goto done;
@@ -682,7 +682,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 		eventmask_msg->len = roundup(BRCMF_E_LAST, NBBY) / NBBY;
 		err = brcmf_fil_iovar_data_get(ifp, "event_msgs_ext",
 					       eventmask_msg,
-					       msglen);
+					       msglen, NULL);
 
 		/* Enable ULP event */
 		brcmf_dbg(EVENT, "enable event ULP\n");
@@ -694,7 +694,7 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 		eventmask_msg->len = (roundup(BRCMF_E_LAST, NBBY) / NBBY);
 
 		err = brcmf_fil_iovar_data_set(ifp, "event_msgs_ext",
-					       eventmask_msg, msglen);
+					       eventmask_msg, msglen, NULL);
 		if (err) {
 			brcmf_err("Set event_msgs_ext error (%d)\n", err);
 			kfree(eventmask_msg);
@@ -721,8 +721,8 @@ int brcmf_c_preinit_dcmds(struct brcmf_if *ifp)
 	}
 
 	/* Enable tx beamforming, errors can be ignored (not supported) */
-	(void)brcmf_fil_iovar_int_set(ifp, "txbf", 1);
-	err = brcmf_fil_iovar_int_set(ifp, "chanspec", 0x1001);
+	(void)brcmf_fil_iovar_int_set(ifp, "txbf", 1, NULL);
+	err = brcmf_fil_iovar_int_set(ifp, "chanspec", 0x1001, NULL);
 	if (err < 0) {
 		bphy_err(drvr, "Initial Channel failed %d\n", err);
 		goto done;
