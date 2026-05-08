@@ -2,7 +2,7 @@
 /plugin/;
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
-#include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
+#include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
 #include <dt-bindings/gpio/gpio.h>
 
 / {
@@ -13,14 +13,22 @@
 		regulator-max-microvolt = <3300000>;  // Maximum voltage in microvolts
 
 		enable-active-high;                  // Optional, indicates the GPIO is active high
-		gpio = <&pinctrl RZG2L_GPIO(10, 5) GPIO_ACTIVE_HIGH>;
+		gpio = <&pinctrl RZV2H_GPIO(A, 5) GPIO_ACTIVE_HIGH>;
 	};
+};
+
+&adv7533 {
+        status = "disabled";
+};
+
+&{/hdmi-out} {
+        status = "disabled";
 };
 
 &pinctrl {
 	disp_bl_en {
 		gpio-hog;
-		gpios = <RZG2L_GPIO(10, 7) GPIO_ACTIVE_HIGH>;
+		gpios = <RZV2H_GPIO(A, 7) GPIO_ACTIVE_HIGH>;
 		output-high;
 		line-name = "disp_bl_en";
 	};
@@ -33,9 +41,9 @@
 		reg = <0x14>;
 		status = "okay";
 		interrupt-parent = <&pinctrl>;
-        interrupts = <RZG2L_GPIO(7, 1) IRQ_TYPE_LEVEL_LOW>;
-		irq-gpios = <&pinctrl RZG2L_GPIO(7, 1) GPIO_ACTIVE_HIGH>;
-		reset-gpios = <&pinctrl RZG2L_GPIO(7, 2) GPIO_ACTIVE_HIGH>; // signal is ACTIVE_LOW, but driver inverts it
+		interrupts = <RZV2H_GPIO(7, 1) IRQ_TYPE_LEVEL_LOW>;
+		irq-gpios = <&pinctrl RZV2H_GPIO(7, 1) GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pinctrl RZV2H_GPIO(7, 2) GPIO_ACTIVE_HIGH>; // signal is ACTIVE_LOW, but driver inverts it
 	};
 };
 

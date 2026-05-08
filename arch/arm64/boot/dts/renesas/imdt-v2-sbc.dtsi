@@ -256,10 +256,49 @@
 		compatible = "i2c-gpio";
 		sda-gpios = <&pinctrl RZV2H_GPIO(2, 0) GPIO_ACTIVE_HIGH>;
 		scl-gpios = <&pinctrl RZV2H_GPIO(2, 1) GPIO_ACTIVE_HIGH>;
-		i2c-gpio,delay-us = <2>;	/* ~100 kHz */
+		i2c-gpio,delay-us = <2>; /* ~100 kHz */
 		#address-cells = <1>;
 		#size-cells = <0>;
-		status = "disabled";
+		status = "okay";
+
+		adv7533: hdmi@39 {
+			compatible = "adi,adv7533";
+			reg = <0x39>;
+			status = "okay";
+			interrupt-parent = <&pinctrl>;
+			interrupts = <RZV2H_GPIO(7, 1) IRQ_TYPE_LEVEL_LOW>;
+			adi,dsi-lanes = <4>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+					adv7533_in: endpoint@0 {
+						remote-endpoint = <&dsi0_out>;
+					};
+				};
+
+				port@1 {
+					reg = <1>;
+					adv7533_out: endpoint@1 {
+						remote-endpoint = <&hdmi_con_out>;
+					};
+				};
+			};
+		};
+	};
+
+	hdmi-out {
+		compatible = "hdmi-connector";
+		type = "d";
+
+		port {
+			hdmi_con_out: endpoint {
+				remote-endpoint = <&adv7533_out>;
+			};
+		};
 	};
 };
 
@@ -869,9 +908,16 @@
 };
 
 &dsi0 {
-	status = "okay";
+    status = "okay";
+    ports {
+        port@1 {
+            dsi0_out: endpoint {
+                remote-endpoint = <&adv7533_in>;
+                data-lanes = <1 2 3 4>;
+            };
+        };
+    };
 };
-
 
 &pcie0 {
 	/* Map all possible DDR as inbound ranges */
