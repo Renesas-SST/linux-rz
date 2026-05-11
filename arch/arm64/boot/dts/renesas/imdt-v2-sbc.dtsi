@@ -849,7 +849,7 @@
 	pinctrl-0 = <&i2c5_pins>;
 	pinctrl-names = "default";
 	clock-frequency = <400000>;
-	status = "okay";
+	status = "disabled";
 
 	ar1335_csi23: camera@36 {
 		compatible = "onsemi,ar1335";
@@ -878,7 +878,7 @@
 	pinctrl-0 = <&i2c6_pins>;
 	pinctrl-names = "default";
 	clock-frequency = <400000>;
-	status = "okay";
+	status = "disabled";
 
 	ar1335_csi22: camera@36 {
 		compatible = "onsemi,ar1335";
@@ -954,77 +954,51 @@
 
 	ports {
 		port {
-		csi21_in: endpoint {
-			clock-lanes = <0>;
-			data-lanes = <1 2 3 4>;
-			remote-endpoint = <&ap1302_to_csi21>;
-		};
+			csi21_in: endpoint {
+				clock-lanes = <0>;
+				data-lanes = <1 2 3 4>;
+				remote-endpoint = <&ap1302_to_csi21>;
+			};
 		};
 	};
 };
 
 &csi22 {
-	status = "okay";
+	status = "disabled";
 
 	ports {
 		port@0 {
-			csi22_in: endpoint {
+			reg = <0>;
+				csi22_in: endpoint {
 				clock-lanes = <0>;
 				data-lanes  = <1 2 3 4>;
 				remote-endpoint = <&ar1335_to_csi22>;
-			};
-		};
-
-		port@1 {
-			csi22_out: endpoint {
-				remote-endpoint = <&cru22_in>;
 			};
 		};
 	};
 };
 
 &csi23 {
-	status = "okay";
+	status = "disabled";
 
 	ports {
 		port@0 {
+			reg = <0>;
 			csi23_in: endpoint {
 				clock-lanes = <0>;
 				data-lanes  = <1 2 3 4>;
 				remote-endpoint = <&ar1335_to_csi23>;
 			};
 		};
-
-		port@1 {
-			csi23_out: endpoint {
-				remote-endpoint = <&cru23_in>;
-			};
-		};
 	};
 };
 
 &cru2 {
-	status = "okay";
-
-	ports {
-		port@0 {
-			cru22_in: endpoint {
-				remote-endpoint = <&csi22_out>;
-			};
-		};
-	};
+	status = "disabled";
 };
 
 &cru3 {
-	status = "okay";
-
-	ports {
-		port@0 {
-			cru23_in: endpoint {
-				remote-endpoint = <&csi23_out>;
-			};
-		};
-	};
+	status = "disabled";
 };
 
 &xhci0 {
