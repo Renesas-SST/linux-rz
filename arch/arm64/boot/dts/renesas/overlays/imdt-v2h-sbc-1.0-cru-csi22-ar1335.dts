@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device Tree Overlay for CSI2-2 AR1335 on IMDT-V2H-SBC
+ * Copyright (C) 2026 Renesas Electronics Corporation
+ */
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+&i2c6 {
+	status = "okay";
+};
+
+&csi22 {
+	status = "okay";
+};
+
+&cru2 {
+	status = "okay";
+};
+
+&cam_gpio {
+	ccm-dis-hog-csi2 {
+		gpio-hog;
+		gpios = <2 GPIO_ACTIVE_LOW>;
+		output-high;
+	};
+};

@@ -119,14 +119,6 @@
 	status = "okay";
 };
 
-&cru2 {
-	status = "okay";
-};
-
-&cru3 {
-	status = "okay";
-};
-
 &adc {
 	status = "okay";
 };
