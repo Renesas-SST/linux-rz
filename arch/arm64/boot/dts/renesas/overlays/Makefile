@@ -21,3 +21,5 @@ dtb-y += rzv2h-rdk-1.0-audio-codec.dtbo
 
 # IMDT-V2H-SBC overlays
 dtb-y += imdt-v2h-sbc-1.0-dsi.dtbo
+dtb-y += imdt-v2h-sbc-1.0-cru-csi22-ar1335.dtbo
+dtb-y += imdt-v2h-sbc-1.0-cru-csi23-ar1335.dtbo
