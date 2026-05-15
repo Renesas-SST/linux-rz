@@ -1364,6 +1364,8 @@ static int brcmf_psm_watchdog_notify(struct brcmf_if *ifp,
 	if (err)
 		bphy_err(drvr, "Failed to get memory dump, %d\n", err);
 
+	brcmf_fil_iovar_int_set(ifp, "ramdump_cmplt", 1, NULL);
+
 	return err;
 }
 
