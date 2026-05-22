@@ -275,6 +275,15 @@
 		clock-frequency = <12000000>;
 	};
 
+	udmabuf@0 {
+		compatible = "ikwzm,u-dma-buf";
+		device-name = "udmabuf0";
+		minor-number = <0>;
+		size = <0x4000000>; // 64MiB
+		dma-coherent;
+		memory-region = <&image_buf0>;
+	};
+
 	ov5645_fixed_clk: osc25250-clk {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
@@ -1306,6 +1315,27 @@
 	status = "okay";
 };
 
+&opencva0{
+	status = "okay";
+};
+
+&codec0 {
+	status = "okay";
+};
+
+&drpai0 {
+	memory-region = <&drp_reserved>;
+	image-memory-region = <&image_buf0>;
+	status = "okay";
+};
+
+&drp1 {
+	memory-region = <&codec0>;
+	memory-oca-region = <&opencva0>;
+
+	status = "okay";
+};
+
 &xhci0 {
 		pinctrl-0 = <&usb30_pins>;
 		pinctrl-names = "default";
@@ -1321,7 +1351,6 @@
 		memory-region = <&global_cma>;
 		status = "okay";
 };
-
 
 &i3c {
 	pinctrl-0 = <&i3c_pins>;
