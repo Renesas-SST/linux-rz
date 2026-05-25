@@ -343,11 +343,42 @@
 		line-name = "sd0_pwr_en";
 	};
 
+	sdhi0_emmc_pins: emmc-pins {
+		sd0-dat-cmd {
+			pins = "SD0DAT0", "SD0DAT1", "SD0DAT2", "SD0DAT3", "SD0DAT4",
+					"SD0DAT5", "SD0DAT6", "SD0DAT7", "SD0CMD";
+			input-enable;
+			renesas,output-impedance = <3>;
+			slew-rate = <0>;
+		};
+
+		sd0-clk {
+			pins = "SD0CLK";
+			renesas,output-impedance = <3>;
+			slew-rate = <0>;
+		};
+	};
+
 	sd1_pwr_en {
 		gpio-hog;
 		gpios = <RZV2H_GPIO(A, 3) GPIO_ACTIVE_HIGH>;
 		output-high;
 		line-name = "sd1_pwr_en";
+	};
+
+	sdhi1_pins: sd1 {
+		sd1_dat_cmd {
+			pins = "SD1DAT0", "SD1DAT1", "SD1DAT2", "SD1DAT3", "SD1CMD";
+			input-enable;
+			renesas,output-impedance = <3>;
+			slew-rate = <0>;
+		};
+
+		sd1_clk {
+			pins = "SD1CLK";
+			renesas,output-impedance = <3>;
+			slew-rate = <0>;
+		};
 	};
 
 	rs232_pwr_en {
@@ -530,6 +561,9 @@
 // };
 
 &sdhi0 {
+	pinctrl-0 = <&sdhi0_emmc_pins>;
+	pinctrl-1 = <&sdhi0_emmc_pins>;
+	pinctrl-names = "default", "state_uhs";
 	vmmc-supply = <&reg_3p3v>;
 	vqmmc-supply = <&vccq_sdhi0>;
 	bus-width = <8>;
@@ -542,12 +576,15 @@
 };
 
 &sdhi1 {
-	vmmc-supply = <&reg_3p3v>;
+	pinctrl-0 = <&sdhi1_pins>;
+	pinctrl-1 = <&sdhi1_pins>;
+	pinctrl-names = "default", "state_uhs";
+	vmmc-supply  = <&reg_3p3v>;
 	vqmmc-supply = <&vccq_sdhi1>;
-	bus-width = <4>;
+	bus-width    = <4>;
 	sd-uhs-sdr50;
 	sd-uhs-sdr104;
-	cd-gpios = <&pinctrl RZV2H_GPIO(9, 4) GPIO_ACTIVE_HIGH>;	
+	cd-gpios = <&pinctrl RZV2H_GPIO(9, 4) GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
 
