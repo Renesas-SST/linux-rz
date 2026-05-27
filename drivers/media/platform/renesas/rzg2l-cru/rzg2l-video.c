@@ -1685,7 +1685,9 @@ static int rzg2l_cru_video_link_validate(struct media_link *link)
 
 	cru = container_of(media_entity_to_video_device(link->sink->entity),
 			   struct rzg2l_cru_dev, vdev);
-	video_fmt = rzg2l_cru_ip_format_to_fmt(cru->format.pixelformat);
+	video_fmt = rzg2l_cru_ip_code_to_fmt(fmt.format.code);
+	if (!video_fmt)
+		return -EPIPE;
 
 	if (fmt.format.width != cru->format.width ||
 	    fmt.format.height != cru->format.height ||
