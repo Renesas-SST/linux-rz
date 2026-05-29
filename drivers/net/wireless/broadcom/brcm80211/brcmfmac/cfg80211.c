@@ -6153,12 +6153,13 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 	enum nl80211_iftype dev_role;
 	struct brcmf_fil_bss_enable_le bss_enable;
 	u16 chanspec = chandef_to_chanspec(&cfg->d11inf, &settings->chandef);
-	bool mbss = false;
+	bool mbss;
 	int is_11d;
 	bool supports_11d;
 	bool closednet;
 	struct bcm_xtlv *he_tlv;
 	struct brcmf_p2p_info *p2p = &cfg->p2p;
+	struct brcmf_cfg80211_vif *vif_walk;
 
 	brcmf_dbg(TRACE, "ctrlchn=%d, center=%d, bw=%d, beacon_interval=%d, dtim_period=%d,\n",
 		  settings->chandef.chan->hw_value,
@@ -6168,19 +6169,20 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 		  settings->ssid, settings->ssid_len, settings->auth_type,
 		  settings->inactivity_timeout);
 	dev_role = ifp->vif->wdev.iftype;
-
+	mbss = ifp->vif->mbss;
 	if (dev_role == NL80211_IFTYPE_AP &&
 	    brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS)) {
-		struct brcmf_cfg80211_vif *vif_walk;
-
+		/* Decide MBSS mode from runtime active AP peers. */
+		mbss = false;
 		list_for_each_entry(vif_walk, &cfg->vif_list, list) {
-			if (brcmf_is_apmode(vif_walk) &&
-			    check_vif_up(vif_walk) &&
-			    vif_walk != ifp->vif) {
-				/* found a vif is with the 1st AP type,
-				 * and it doesn't equal to the currect vif calls start_ap.
-				 * then it is mbss case.
-				 */
+			if (vif_walk == ifp->vif)
+				continue;
+
+			if (vif_walk->wdev.iftype != NL80211_IFTYPE_AP)
+				continue;
+
+			if (test_bit(BRCMF_VIF_STATUS_AP_CREATED,
+				     &vif_walk->sme_state)) {
 				mbss = true;
 				break;
 			}
@@ -6279,29 +6281,8 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 	ifp->isap = false;
 	/* Interface specific setup */
 	if (dev_role == NL80211_IFTYPE_AP) {
-		u32 is_up;
-
-		if ((brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS)) && !mbss) {
-			err = brcmf_fil_cmd_int_get(ifp, BRCMF_C_GET_UP, &is_up);
-			if (err < 0) {
-				bphy_err(drvr, "BRCMF_C_GET_UP error (%d)\n", err);
-				goto exit;
-			}
-
-			/* mbss must be set in DOWN state. */
-			if (is_up) {
-				err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_DOWN, 1);
-				if (err < 0) {
-					bphy_err(drvr, "BRCMF_C_DOWN error (%d)\n", err);
-					goto exit;
-				}
-			}
-			err = brcmf_fil_iovar_int_set(ifp, "mbss", 1, NULL);
-			if (err < 0) {
-				bphy_err(drvr, "set mbss error (%d)\n", err);
-				goto exit;
-			}
-		}
+		if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS) && !mbss)
+			brcmf_fil_iovar_int_set(ifp, "mbss", 1, NULL);
 
 		if (!test_bit(BRCMF_VIF_STATUS_AP_CREATED, &ifp->vif->sme_state)) {
 			bss_enable.bsscfgidx = cpu_to_le32(ifp->bsscfgidx);
@@ -6331,14 +6312,7 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 			goto exit;
 		}
 
-		err = brcmf_fil_cmd_int_get(ifp, BRCMF_C_GET_UP, &is_up);
-		if (err < 0) {
-			bphy_err(drvr, "BRCMF_C_GET_UP error (%d)\n", err);
-			goto exit;
-		}
-
-		if (!is_up)
-			err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1);
+		err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1);
 		if (err < 0) {
 			bphy_err(drvr, "BRCMF_C_UP error (%d)\n", err);
 			goto exit;
@@ -6469,10 +6443,13 @@ static int brcmf_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev,
 	struct brcmf_if *ifp = netdev_priv(ndev);
 	struct brcmf_pub *drvr = cfg->pub;
 	struct brcmf_cfg80211_profile *profile = &ifp->vif->profile;
-	s32 err;
+	s32 err = 0;
 	struct brcmf_fil_bss_enable_le bss_enable;
 	struct brcmf_join_params join_params;
 	s32 apsta = 0;
+	bool apsta_valid = false;
+	bool fw_down = false;
+	bool keep_radio_ap_active = false;
 
 	brcmf_dbg(TRACE, "Enter\n");
 
@@ -6491,7 +6468,11 @@ static int brcmf_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev,
 			profile->use_fwauth = BIT(BRCMF_PROFILE_FWAUTH_NONE);
 		}
 
-		cfg->num_softap--;
+		if (WARN_ON(!cfg->num_softap))
+			cfg->num_softap = 0;
+		else
+			cfg->num_softap--;
+		clear_bit(BRCMF_VIF_STATUS_AP_CREATED, &ifp->vif->sme_state);
 
 		/* Clear bss configuration and SSID */
 		bss_enable.bsscfgidx = cpu_to_le32(ifp->bsscfgidx);
@@ -6507,9 +6488,12 @@ static int brcmf_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev,
 		if (err < 0)
 			bphy_err(drvr, "SET SSID error (%d)\n", err);
 
+		brcmf_vif_clear_mgmt_ies(ifp->vif);
+
 		if (cfg->num_softap) {
 			brcmf_dbg(TRACE, "Num of SoftAP %u\n", cfg->num_softap);
-			return 0;
+			keep_radio_ap_active = true;
+			goto cleanup;
 		}
 
 		/* First BSS doesn't get a full reset */
@@ -6519,11 +6503,15 @@ static int brcmf_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev,
 		err = brcmf_fil_iovar_int_get(ifp, "apsta", &apsta, NULL);
 		if (err < 0)
 			brcmf_err("wl apsta failed (%d)\n", err);
+		else
+			apsta_valid = true;
 
-		if (!apsta) {
+		if (apsta_valid && !apsta) {
 			err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_DOWN, 1);
 			if (err < 0)
 				bphy_err(drvr, "BRCMF_C_DOWN error %d\n", err);
+			else
+				fw_down = true;
 			err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_AP, 0);
 			if (err < 0)
 				bphy_err(drvr, "Set AP mode error %d\n", err);
@@ -6532,12 +6520,13 @@ static int brcmf_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev,
 			brcmf_fil_iovar_int_set(ifp, "mbss", 0, NULL);
 		brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_REGULATORY,
 				      ifp->vif->is_11d);
-		/* Bring device back up so it can be used again */
-		err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1);
-		if (err < 0)
-			bphy_err(drvr, "BRCMF_C_UP error %d\n", err);
+		if (fw_down) {
+			/* Bring device back up only when stop path forced it down. */
+			err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_UP, 1);
+			if (err < 0)
+				bphy_err(drvr, "BRCMF_C_UP error %d\n", err);
+		}
 
-		brcmf_vif_clear_mgmt_ies(ifp->vif);
 	} else {
 		bss_enable.bsscfgidx = cpu_to_le32(ifp->bsscfgidx);
 		bss_enable.enable = cpu_to_le32(WL_IOV_OP_BSSCFG_DISABLE);
@@ -6546,9 +6535,14 @@ static int brcmf_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev,
 		if (err < 0)
 			bphy_err(drvr, "bss_enable config failed %d\n", err);
 	}
-	brcmf_set_mpc(ifp, 1);
+
+cleanup:
+	if (!keep_radio_ap_active) {
+		brcmf_set_mpc(ifp, 1);
+		brcmf_configure_arp_nd_offload(ifp, true);
+	}
+
 	clear_bit(BRCMF_VIF_STATUS_AP_CREATED, &ifp->vif->sme_state);
-	brcmf_configure_arp_nd_offload(ifp, true);
 	brcmf_net_setcarrier(ifp, false);
 
 	return err;
@@ -7574,7 +7568,10 @@ struct cfg80211_ops *brcmf_cfg80211_get_ops(struct brcmf_mp_device *settings)
 struct brcmf_cfg80211_vif *brcmf_alloc_vif(struct brcmf_cfg80211_info *cfg,
 					   enum nl80211_iftype type)
 {
+	struct brcmf_cfg80211_vif *vif_walk;
 	struct brcmf_cfg80211_vif *vif;
+	bool mbss;
+	struct brcmf_if *ifp = brcmf_get_ifp(cfg->pub, 0);
 
 	brcmf_dbg(TRACE, "allocating virtual interface (size=%zu)\n",
 		  sizeof(*vif));
@@ -7587,6 +7584,19 @@ struct brcmf_cfg80211_vif *brcmf_alloc_vif(struct brcmf_cfg80211_info *cfg,
 	init_completion(&vif->mgmt_tx);
 
 	brcmf_init_prof(&vif->profile);
+
+	if (type == NL80211_IFTYPE_AP &&
+	    brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS)) {
+		mbss = false;
+		list_for_each_entry(vif_walk, &cfg->vif_list, list) {
+			if (vif_walk->wdev.iftype == NL80211_IFTYPE_AP) {
+				mbss = true;
+				break;
+			}
+		}
+		vif->mbss = mbss;
+	}
+
 	init_completion(&vif->mgmt_tx);
 	list_add_tail(&vif->list, &cfg->vif_list);
 	return vif;
