@@ -604,7 +604,7 @@ void brcmf_txflowblock_if(struct brcmf_if *ifp,
 	spin_unlock_irqrestore(&ifp->netif_stop_lock, flags);
 }
 
-void brcmf_netif_rx(struct brcmf_if *ifp, struct sk_buff *skb, bool inirq)
+bool brcmf_netif_rx_preprocess(struct brcmf_if *ifp, struct sk_buff *skb)
 {
 	/* Most of Broadcom's firmwares send 802.11f ADD frame every time a new
 	 * STA connects to the AP interface. This is an obsoleted standard most
@@ -612,7 +612,7 @@ void brcmf_netif_rx(struct brcmf_if *ifp, struct sk_buff *skb, bool inirq)
 	 */
 	if (!ifp->drvr->settings->iapp && brcmf_skb_is_iapp(skb)) {
 		brcmu_pkt_buf_free_skb(skb);
-		return;
+		return false;
 	}
 
 	if (skb->pkt_type == PACKET_MULTICAST)
@@ -620,11 +620,19 @@ void brcmf_netif_rx(struct brcmf_if *ifp, struct sk_buff *skb, bool inirq)
 
 	if (!(ifp->ndev->flags & IFF_UP)) {
 		brcmu_pkt_buf_free_skb(skb);
-		return;
+		return false;
 	}
 
 	ifp->ndev->stats.rx_bytes += skb->len;
 	ifp->ndev->stats.rx_packets++;
+
+	return true;
+}
+
+void brcmf_netif_rx(struct brcmf_if *ifp, struct sk_buff *skb, bool inirq)
+{
+	if (!brcmf_netif_rx_preprocess(ifp, skb))
+		return;
 
 	brcmf_dbg(DATA, "rx proto=0x%X\n", ntohs(skb->protocol));
 #if (KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE)
@@ -687,6 +695,8 @@ void brcmf_netif_mon_rx(struct brcmf_if *ifp, struct sk_buff *skb)
 	skb_reset_mac_header(skb);
 	skb->pkt_type = PACKET_OTHERHOST;
 	skb->protocol = htons(ETH_P_802_2);
+
+	brcmf_netif_rx(ifp, skb, false);
 }
 
 static int brcmf_rx_hdrpull(struct brcmf_pub *drvr, struct sk_buff *skb,

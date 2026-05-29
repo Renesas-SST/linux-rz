@@ -12,6 +12,7 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/net_tstamp.h>
+#include <linux/bottom_half.h>
 
 #include <brcmu_utils.h>
 #include <brcmu_wifi.h>
@@ -290,9 +291,6 @@ struct brcmf_msgbuf {
 	struct work_struct flowring_work;
 	spinlock_t flowring_work_lock;
 	struct list_head work_queue;
-	struct workqueue_struct *rx_wq;
-	struct work_struct rx_work;
-	struct sk_buff_head rx_data_q;
 };
 
 struct brcmf_msgbuf_pktid {
@@ -820,18 +818,6 @@ static void brcmf_msgbuf_txflow(struct brcmf_msgbuf *msgbuf, u16 flowid)
 	brcmf_commonring_unlock(commonring);
 }
 
-static void brcmf_msgbuf_rx(struct brcmf_msgbuf *msgbuf)
-{
-	struct sk_buff *skb;
-	struct brcmf_if *ifp;
-
-	while ((skb = skb_dequeue(&msgbuf->rx_data_q))) {
-		ifp = netdev_priv(skb->dev);
-		if (ifp)
-			brcmf_netif_rx(ifp, skb, false);
-	}
-}
-
 static void brcmf_msgbuf_txflow_worker(struct work_struct *worker)
 {
 	struct brcmf_msgbuf *msgbuf;
@@ -844,13 +830,6 @@ static void brcmf_msgbuf_txflow_worker(struct work_struct *worker)
 	}
 }
 
-static void brcmf_msgbuf_rx_worker(struct work_struct *worker)
-{
-	struct brcmf_msgbuf *msgbuf;
-
-	msgbuf = container_of(worker, struct brcmf_msgbuf, rx_work);
-	brcmf_msgbuf_rx(msgbuf);
-}
 
 static int brcmf_msgbuf_schedule_txdata(struct brcmf_msgbuf *msgbuf, u32 flowid,
 					bool force)
@@ -866,13 +845,6 @@ static int brcmf_msgbuf_schedule_txdata(struct brcmf_msgbuf *msgbuf, u32 flowid,
 	return 0;
 }
 
-static int brcmf_msgbuf_schedule_rxdata(struct brcmf_msgbuf *msgbuf, bool force)
-{
-	if (force)
-		queue_work(msgbuf->rx_wq, &msgbuf->rx_work);
-
-	return 0;
-}
 
 static int brcmf_msgbuf_tx_queue_data(struct brcmf_pub *drvr, int ifidx,
 				      struct sk_buff *skb)
@@ -1220,7 +1192,8 @@ exit:
 
 
 static void
-brcmf_msgbuf_process_rx_complete(struct brcmf_msgbuf *msgbuf, void *buf)
+brcmf_msgbuf_process_rx_complete(struct brcmf_msgbuf *msgbuf, void *buf,
+				 struct list_head *rx_list)
 {
 	struct brcmf_pub *drvr = msgbuf->drvr;
 	struct msgbuf_rx_complete *rx_complete;
@@ -1263,7 +1236,7 @@ brcmf_msgbuf_process_rx_complete(struct brcmf_msgbuf *msgbuf, void *buf)
 		}
 
 		brcmf_netif_mon_rx(ifp, skb);
-		goto queue;
+		return;
 	}
 
 	ifp = brcmf_get_ifp(msgbuf->drvr, rx_complete->msg.ifidx);
@@ -1302,10 +1275,16 @@ brcmf_msgbuf_process_rx_complete(struct brcmf_msgbuf *msgbuf, void *buf)
 			}
 		}
 	}
-	skb->dev = ifp->ndev;
 	skb->protocol = eth_type_trans(skb, ifp->ndev);
-queue:
-	skb_queue_tail(&msgbuf->rx_data_q, skb);
+	if (!rx_list) {
+		brcmf_netif_rx(ifp, skb, false);
+		return;
+	}
+
+	if (!brcmf_netif_rx_preprocess(ifp, skb))
+		return;
+
+	list_add_tail(&skb->list, rx_list);
 }
 
 static void brcmf_msgbuf_process_gen_status(struct brcmf_msgbuf *msgbuf,
@@ -1407,7 +1386,8 @@ brcmf_msgbuf_process_d2h_mbdata(struct brcmf_msgbuf *msgbuf,
 	brcmf_pcie_handle_mb_data(msgbuf->drvr->bus_if, d2h_mbdata->mbdata);
 }
 
-static void brcmf_msgbuf_process_msgtype(struct brcmf_msgbuf *msgbuf, void *buf)
+static void brcmf_msgbuf_process_msgtype(struct brcmf_msgbuf *msgbuf, void *buf,
+					 struct list_head *rx_list)
 {
 	struct brcmf_pub *drvr = msgbuf->drvr;
 	struct msgbuf_common_hdr *msg;
@@ -1447,7 +1427,7 @@ static void brcmf_msgbuf_process_msgtype(struct brcmf_msgbuf *msgbuf, void *buf)
 		break;
 	case MSGBUF_TYPE_RX_CMPLT:
 		brcmf_dbg(MSGBUF, "MSGBUF_TYPE_RX_CMPLT\n");
-		brcmf_msgbuf_process_rx_complete(msgbuf, buf);
+		brcmf_msgbuf_process_rx_complete(msgbuf, buf, rx_list);
 		break;
 	case MSGBUF_TYPE_D2H_MAILBOX_DATA:
 		brcmf_dbg(MSGBUF, "MSGBUF_TYPE_D2H_MAILBOX_DATA\n");
@@ -1462,7 +1442,8 @@ static void brcmf_msgbuf_process_msgtype(struct brcmf_msgbuf *msgbuf, void *buf)
 
 
 static void brcmf_msgbuf_process_rx(struct brcmf_msgbuf *msgbuf,
-				    struct brcmf_commonring *commonring)
+				    struct brcmf_commonring *commonring,
+				    struct list_head *rx_list)
 {
 	void *buf;
 	u16 count;
@@ -1476,7 +1457,8 @@ again:
 	processed = 0;
 	while (count) {
 		brcmf_msgbuf_process_msgtype(msgbuf,
-					     buf + msgbuf->rx_dataoffset);
+					     buf + msgbuf->rx_dataoffset,
+					     rx_list);
 		buf += brcmf_commonring_len_item(commonring);
 		processed++;
 		if (processed == BRCMF_MSGBUF_UPDATE_RX_PTR_THRS) {
@@ -1502,15 +1484,23 @@ int brcmf_proto_msgbuf_rx_trigger(struct device *dev)
 	void *buf;
 	u32 flowid;
 	int qlen;
+	LIST_HEAD(rx_list);
 
 	buf = msgbuf->commonrings[BRCMF_D2H_MSGRING_RX_COMPLETE];
-	brcmf_msgbuf_process_rx(msgbuf, buf);
-	/* To improve RX throughput, put rxdata into the workqueue only. */
-	brcmf_msgbuf_schedule_rxdata(msgbuf, true);
+	brcmf_msgbuf_process_rx(msgbuf, buf, &rx_list);
 	buf = msgbuf->commonrings[BRCMF_D2H_MSGRING_TX_COMPLETE];
-	brcmf_msgbuf_process_rx(msgbuf, buf);
+	brcmf_msgbuf_process_rx(msgbuf, buf, NULL);
 	buf = msgbuf->commonrings[BRCMF_D2H_MSGRING_CONTROL_COMPLETE];
-	brcmf_msgbuf_process_rx(msgbuf, buf);
+	brcmf_msgbuf_process_rx(msgbuf, buf, NULL);
+
+	if (!list_empty(&rx_list)) {
+		/* Threaded IRQ handler is process context; hold BH while
+		 * delivering skb lists to network RX core.
+		 */
+		local_bh_disable();
+		netif_receive_skb_list(&rx_list);
+		local_bh_enable();
+	}
 
 	for_each_set_bit(flowid, msgbuf->txstatus_done_map,
 			 msgbuf->max_flowrings) {
@@ -1672,20 +1662,12 @@ int brcmf_proto_msgbuf_attach(struct brcmf_pub *drvr)
 	if (!msgbuf)
 		goto fail;
 
-	msgbuf->txflow_wq = alloc_workqueue("msgbuf_txflow", WQ_HIGHPRI |
-				    WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	msgbuf->txflow_wq = create_singlethread_workqueue("msgbuf_txflow");
 	if (msgbuf->txflow_wq == NULL) {
 		bphy_err(drvr, "workqueue creation failed\n");
 		goto fail;
 	}
 	INIT_WORK(&msgbuf->txflow_work, brcmf_msgbuf_txflow_worker);
-	msgbuf->rx_wq = alloc_workqueue("msgbuf_rx", WQ_HIGHPRI |
-				    WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
-	if (!msgbuf->rx_wq) {
-		bphy_err(drvr, "RX workqueue creation failed\n");
-		goto fail;
-	}
-	INIT_WORK(&msgbuf->rx_work, brcmf_msgbuf_rx_worker);
 	count = BITS_TO_LONGS(if_msgbuf->max_flowrings);
 	count = count * sizeof(unsigned long);
 	msgbuf->flow_map = kzalloc(count, GFP_KERNEL);
@@ -1750,7 +1732,6 @@ int brcmf_proto_msgbuf_attach(struct brcmf_pub *drvr)
 	if (!msgbuf->flow)
 		goto fail;
 
-	skb_queue_head_init(&msgbuf->rx_data_q);
 	brcmf_dbg(MSGBUF, "Feeding buffers, rx data %d, rx event %d, rx ioctl resp %d\n",
 		  msgbuf->max_rxbufpost, msgbuf->max_eventbuf,
 		  msgbuf->max_ioctlrespbuf);
@@ -1785,8 +1766,6 @@ fail:
 					  msgbuf->ioctbuf_handle);
 		if (msgbuf->txflow_wq)
 			destroy_workqueue(msgbuf->txflow_wq);
-		if (msgbuf->rx_wq)
-			destroy_workqueue(msgbuf->rx_wq);
 		kfree(msgbuf);
 	}
 	return -ENOMEM;
@@ -1813,9 +1792,6 @@ void brcmf_proto_msgbuf_detach(struct brcmf_pub *drvr)
 		kfree(msgbuf->txstatus_done_map);
 		if (msgbuf->txflow_wq)
 			destroy_workqueue(msgbuf->txflow_wq);
-
-		if (msgbuf->rx_wq)
-			destroy_workqueue(msgbuf->rx_wq);
 
 		brcmf_flowring_detach(msgbuf->flow);
 		dma_free_coherent(drvr->bus_if->dev,
