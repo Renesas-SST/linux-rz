@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+* Device Tree Source for the IMDT-V2H SBC
+*
+* Copyright (C) 2026 Renesas Electronics Corp.
+*/
+
 /dts-v1/;
 #include "r9a09g057.dtsi"
 #include <dt-bindings/pinctrl/rzv2h-pinctrl.h>
