@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /*
- * Device Tree Source for the RZ/V2H EVK SoC support OpenAMP related stuff
+ * Device Tree Source for OpenAMP-related support on the RZ/V2H SoC.
  *
- * Copyright (C) 2024 Renesas Electronics Corp.
+ * Copyright (C) 2026 Renesas Electronics Corp.
  */
 
 / {
