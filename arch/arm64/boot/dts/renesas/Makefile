@@ -153,15 +153,20 @@ r9a07g044c2-smarc-cru-csi-ov5645-dtbs := r9a07g044c2-smarc.dtb r9a07g044c2-smarc
 dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044c2-smarc-cru-csi-ov5645.dtb
 
 dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-remi-pi.dtb
+
+DTC_CPP_FLAGS_rzg2l-evk += -DREMOTEPROC
 DTC_FLAGS_rzg2l-evk += -@
 dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-evk.dtb
 
+DTC_CPP_FLAGS_rzg2l-sbc += -DREMOTEPROC
 DTC_FLAGS_rzg2l-sbc += -@
 dtb-$(CONFIG_ARCH_R9A07G044) += rzg2l-sbc.dtb
 
+DTC_CPP_FLAGS_rzv2l-evk += -DREMOTEPROC
 DTC_FLAGS_rzv2l-evk += -@
 dtb-$(CONFIG_ARCH_R9A07G054) += rzv2l-evk.dtb
 
+DTC_CPP_FLAGS_rsg2l-100 += -DREMOTEPROC
 DTC_FLAGS_rs-g2l100 += -@
 dtb-$(CONFIG_ARCH_R9A07G054) += rs-g2l100.dtb
 
@@ -185,9 +190,11 @@ dtb-$(CONFIG_ARCH_R9A09G056) += rzv2-evk-cn15-sd.dtbo
 r9a09g056n48-rzv2n-evk-cn15-sd-dtbs := r9a09g056n48-rzv2n-evk.dtb rzv2-evk-cn15-sd.dtbo
 dtb-$(CONFIG_ARCH_R9A09G056) += r9a09g056n48-rzv2n-evk-cn15-sd.dtb
 
+DTC_CPP_FLAGS_rzv2h-evk-ver1 += -DREMOTEPROC
 DTC_FLAGS_rzv2h-evk-ver1 += -@
 dtb-$(CONFIG_ARCH_R9A09G057) += rzv2h-evk-ver1.dtb
 
+DTC_CPP_FLAGS_rzv2h-rdk-ver1 += -DREMOTEPROC
 DTC_FLAGS_rzv2h-rdk-ver1 += -@
 dtb-$(CONFIG_ARCH_R9A09G057) += rzv2h-rdk-ver1.dtb
 
@@ -199,7 +206,7 @@ dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h44-rzv2h-evk-cn15-emmc.dtb
 dtb-$(CONFIG_ARCH_R9A09G057) += rzv2-evk-cn15-sd.dtbo
 r9a09g057h44-rzv2h-evk-cn15-sd-dtbs := rzv2h-evk-ver1.dtb rzv2-evk-cn15-sd.dtbo
 dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h44-rzv2h-evk-cn15-sd.dtb
-dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h48-kakip.dtb
+#dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h48-kakip.dtb
 
 dtb-$(CONFIG_ARCH_R9A09G077) += r9a09g077m44-rzt2h-evk.dtb
 
@@ -227,6 +234,7 @@ dtb-$(CONFIG_ARCH_R9A09G057) += r9a09g057h4-mxt-ar0331-sd.dtb r9a09g057h4-mxt-im
 				r9a09g057h4-mxt-imx219-sd.dtb r9a09g057h4-mxt-imx462-sd.dtb \
 				r9a09g057h4-mxt-tevs-sd.dtb
 
+DTC_CPP_FLAGS_imdt-v2h-sbc += -DREMOTEPROC
 dtb-$(CONFIG_ARCH_R9A09G057) += imdt-v2h-sbc.dtb
 
 dtb-$(CONFIG_ARCH_RCAR_GEN3) += draak-ebisu-panel-aa104xd12.dtbo
