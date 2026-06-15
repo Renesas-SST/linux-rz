@@ -2181,7 +2181,7 @@ failed:
 			  (add ? "add" : "remove"), ret, fwret);
 
 	kfree(pkt_filter);
-	return ret ? ret : fwret;
+	return fwret ? fwret : ret;
 }
 
 int brcmf_pktfilter_enable(struct net_device *ndev, bool enable)
