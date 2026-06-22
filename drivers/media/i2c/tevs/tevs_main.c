@@ -5,6 +5,7 @@
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
+#include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
@@ -1841,10 +1842,22 @@ static int tevs_ctrls_init(struct tevs *tevs)
 		ARRAY_SIZE(tevs_link_freqs) - 1, 0, tevs_link_freqs);
 	tevs->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	tevs->pixel_rate =
-		v4l2_ctrl_new_std(ctrl_hdlr, &tevs_ctrl_ops,
-				  V4L2_CID_PIXEL_RATE, tevs_pixel_rates[0],
-				  tevs_pixel_rates[0], 1, tevs_pixel_rates[0]);
+	{
+		/* hsfreq seen by the CSI-2 receiver is derived from this
+		 * control as pixel_rate * bpp / lanes.  The static table
+		 * value hardcodes a 4-lane assumption; compute the real
+		 * rate from DT (data-frequency is per-lane Mbps,
+		 * UYVY8_1X16 = 16 bpp) so any declared lane count works.
+		 */
+		u64 pr = tevs_pixel_rates[0];
+
+		if (tevs->data_frequency > 0 && tevs->data_lanes > 0)
+			pr = div_u64((u64)tevs->data_frequency * 1000000ULL *
+				     tevs->data_lanes, 16);
+		tevs->pixel_rate =
+			v4l2_ctrl_new_std(ctrl_hdlr, &tevs_ctrl_ops,
+					  V4L2_CID_PIXEL_RATE, pr, pr, 1, pr);
+	}
 	tevs->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	tevs->bsl = v4l2_ctrl_new_custom(ctrl_hdlr, &tevs_bsl_mode, NULL);
