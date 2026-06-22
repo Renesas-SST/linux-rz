@@ -29,6 +29,14 @@ static const struct rzg2l_cru_ip_format rzg2l_cru_ip_formats[] = {
 		.fmt_types = V4L2_PIXEL_ENC_YUV,
 	},
 	{
+		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+		.datatype = MIPI_CSI2_DT_YUV422_8B,
+		.format = V4L2_PIX_FMT_YUYV,
+		.bpp = 2,
+		.icndmr = ICnDMR_YCMODE_YUYV,
+		.fmt_types = V4L2_PIXEL_ENC_YUV,
+	},
+	{
 		.code = MEDIA_BUS_FMT_UYVY10_2X10,
 		.datatype = MIPI_CSI2_DT_YUV422_10B,
 		.format = V4L2_PIX_FMT_UYVY,
