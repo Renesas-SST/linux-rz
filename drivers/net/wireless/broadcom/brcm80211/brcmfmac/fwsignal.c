@@ -359,17 +359,23 @@ struct brcmf_skbuff_cb {
  *	firmware tossed the packet after retries.
  * @BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED:
  *	firmware wrongly reported suppressed previously, now fixing to acked.
- * @BRCMF_FWS_TXSTATUS_HOST_TOSSED:
- *	host tossed the packet.
+ * @BRCMF_FWS_TXSTATUS_FW_EXPIRED:
+ *	firmware expired the packet.
+ * @BRCMF_FWS_TXSTATUS_FW_DROPPED:
+ *	firmware dropped the packet.
+ * @BRCMF_FWS_TXSTATUS_FW_MKTFREE:
+ *	firmware marked the packet free.
  */
 enum brcmf_fws_txstatus {
-	BRCMF_FWS_TXSTATUS_DISCARD,
-	BRCMF_FWS_TXSTATUS_CORE_SUPPRESS,
-	BRCMF_FWS_TXSTATUS_FW_PS_SUPPRESS,
-	BRCMF_FWS_TXSTATUS_FW_TOSSED,
-	BRCMF_FWS_TXSTATUS_FW_DISCARD_NOACK,
-	BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED,
-	BRCMF_FWS_TXSTATUS_HOST_TOSSED
+	BRCMF_FWS_TXSTATUS_DISCARD = 0,
+	BRCMF_FWS_TXSTATUS_CORE_SUPPRESS = 1,
+	BRCMF_FWS_TXSTATUS_FW_PS_SUPPRESS = 2,
+	BRCMF_FWS_TXSTATUS_FW_TOSSED = 3,
+	BRCMF_FWS_TXSTATUS_FW_DISCARD_NOACK = 4,
+	BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED = 5,
+	BRCMF_FWS_TXSTATUS_FW_EXPIRED = 6,
+	BRCMF_FWS_TXSTATUS_FW_DROPPED = 7,
+	BRCMF_FWS_TXSTATUS_FW_MKTFREE = 8
 };
 
 enum brcmf_fws_fcmode {
@@ -505,6 +511,10 @@ struct brcmf_fws_stats {
 	u32 txs_supp_core;
 	u32 txs_supp_ps;
 	u32 txs_tossed;
+	u32 txs_expired;
+	u32 txs_dropped;
+	u32 txs_mktfree;
+	u32 txs_unknown;
 	u32 txs_host_tossed;
 	u32 bus_flow_block;
 	u32 fws_flow_block;
@@ -1545,17 +1555,21 @@ brcmf_fws_txs_process(struct brcmf_fws_info *fws, u8 flags, u32 hslot,
 		fws->stats.txs_discard += compcnt;
 	else if (flags == BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED)
 		fws->stats.txs_discard += compcnt;
-	else if (flags == BRCMF_FWS_TXSTATUS_HOST_TOSSED)
-		fws->stats.txs_host_tossed += compcnt;
-	else
-		bphy_err(drvr, "unexpected txstatus\n");
+	else if (flags == BRCMF_FWS_TXSTATUS_FW_EXPIRED) {
+		fws->stats.txs_expired += compcnt;
+	} else if (flags == BRCMF_FWS_TXSTATUS_FW_DROPPED) {
+		fws->stats.txs_dropped += compcnt;
+	} else if (flags == BRCMF_FWS_TXSTATUS_FW_MKTFREE) {
+		fws->stats.txs_mktfree += compcnt;
+	} else {
+		fws->stats.txs_unknown += compcnt;
+		bphy_err(drvr, "unexpected txstatus %u\n", flags);
+	}
 
 	while (cnt < compcnt) {
 		if (BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode)) {
-			if (flags != BRCMF_FWS_TXSTATUS_HOST_TOSSED)
-				ret = brcmf_fws_deque_afq(fws, hslot, hcnt, fifo_id, &skb);
-			else
-				skb = NULL;
+			ret = brcmf_fws_deque_afq(fws, hslot, hcnt, fifo_id,
+						  &skb);
 		} else {
 			ret = brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &skb,
 						      remove_from_hanger);
@@ -1582,8 +1596,7 @@ brcmf_fws_txs_process(struct brcmf_fws_info *fws, u8 flags, u32 hslot,
 		/* pick up the implicit credit from this packet */
 		fifo = brcmf_skb_htod_tag_get_field(skb, FIFO);
 		if (fws->fcmode == BRCMF_FWS_FCMODE_IMPLIED_CREDIT ||
-		    (brcmf_skb_if_flags_get_field(skb, REQ_CREDIT)) ||
-		    flags == BRCMF_FWS_TXSTATUS_HOST_TOSSED) {
+		    brcmf_skb_if_flags_get_field(skb, REQ_CREDIT)) {
 			brcmf_fws_return_credits(fws, fifo, 1);
 			brcmf_fws_schedule_deq(fws);
 		}
@@ -1612,6 +1625,63 @@ cont:
 	}
 
 	return 0;
+}
+
+static void brcmf_fws_txs_process_host_tossed(struct brcmf_fws_info *fws,
+					      struct sk_buff *skb,
+					      bool header_pulled,
+					      bool in_transit)
+{
+	struct brcmf_pub *drvr = fws->drvr;
+	struct brcmf_fws_mac_descriptor *entry;
+	struct brcmf_if *ifp = NULL;
+	struct sk_buff *pktout;
+	u32 hslot;
+	u32 fifo;
+	int ret;
+
+	fws->stats.txs_host_tossed++;
+
+	if (!BRCMF_FWS_MODE_GET_AFQ(fws->wlfc_mode)) {
+		hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
+		ret = brcmf_fws_hanger_poppkt(&fws->hanger, hslot, &pktout,
+					      true);
+		if (ret || !pktout)
+			bphy_err(drvr, "no packet in hanger slot: hslot=%d\n",
+				 hslot);
+		else
+			skb = pktout;
+	}
+
+	entry = brcmf_skbcb(skb)->mac;
+	if (WARN_ON(!entry || IS_ERR(entry))) {
+		brcmu_pkt_buf_free_skb(skb);
+		return;
+	}
+
+	if (in_transit) {
+		entry->transit_count--;
+		if (entry->suppressed && entry->suppr_transit_count)
+			entry->suppr_transit_count--;
+	}
+
+	fifo = brcmf_skb_htod_tag_get_field(skb, FIFO);
+	brcmf_fws_return_credits(fws, fifo, 1);
+	brcmf_fws_schedule_deq(fws);
+	brcmf_fws_macdesc_return_req_credit(skb);
+
+	if (header_pulled) {
+		ifp = brcmf_get_ifp(drvr, brcmf_skb_if_flags_get_field(skb,
+								       INDEX));
+	} else {
+		ret = brcmf_proto_hdrpull(drvr, false, skb, &ifp);
+		if (ret) {
+			brcmu_pkt_buf_free_skb(skb);
+			return;
+		}
+	}
+
+	brcmf_txfinalize(ifp, skb, false);
 }
 
 static void brcmf_fws_credit_auto_recover(struct brcmf_fws_info *fws, u8 *data)
@@ -2166,7 +2236,7 @@ static void brcmf_fws_rollback_toq(struct brcmf_fws_info *fws,
 	struct brcmf_pub *drvr = fws->drvr;
 	struct brcmf_fws_mac_descriptor *entry;
 	struct sk_buff *pktout;
-	int qidx, hslot;
+	int qidx;
 	int rc = 0;
 
 	entry = brcmf_skbcb(skb)->mac;
@@ -2187,9 +2257,7 @@ static void brcmf_fws_rollback_toq(struct brcmf_fws_info *fws,
 
 	if (rc) {
 		fws->stats.rollback_failed++;
-		hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
-		brcmf_fws_txs_process(fws, BRCMF_FWS_TXSTATUS_HOST_TOSSED,
-				      hslot, 0, 0, 1, 0, 0);
+		brcmf_fws_txs_process_host_tossed(fws, skb, true, false);
 	} else {
 		fws->stats.rollback_success++;
 		brcmf_fws_return_credits(fws, fifo, 1);
@@ -2532,6 +2600,10 @@ static int brcmf_debugfs_fws_stats_read(struct seq_file *seq, void *data)
 		   "txs_suppr_core:  %8u\t"
 		   "txs_suppr_ps:    %8u\n"
 		   "txs_tossed:      %8u\t"
+		   "txs_expired:     %8u\n"
+		   "txs_dropped:     %8u\t"
+		   "txs_mktfree:     %8u\n"
+		   "txs_unknown:     %8u\t"
 		   "txs_host_tossed: %8u\n"
 		   "bus_flow_block:  %8u\t"
 		   "fws_flow_block:  %8u\n",
@@ -2553,6 +2625,10 @@ static int brcmf_debugfs_fws_stats_read(struct seq_file *seq, void *data)
 		   fwstats->txs_supp_core,
 		   fwstats->txs_supp_ps,
 		   fwstats->txs_tossed,
+		   fwstats->txs_expired,
+		   fwstats->txs_dropped,
+		   fwstats->txs_mktfree,
+		   fwstats->txs_unknown,
 		   fwstats->txs_host_tossed,
 		   fwstats->bus_flow_block,
 		   fwstats->fws_flow_block);
@@ -2849,8 +2925,6 @@ brcmf_fws_enque_afq(struct brcmf_fws_info *fws, struct sk_buff *skb)
 void brcmf_fws_bustxcomplete(struct brcmf_fws_info *fws, struct sk_buff *skb,
 			     bool success)
 {
-	u32 hslot;
-
 	if (brcmf_skbcb(skb)->state == BRCMF_FWS_SKBSTATE_TIM) {
 		brcmu_pkt_buf_free_skb(skb);
 		return;
@@ -2858,9 +2932,7 @@ void brcmf_fws_bustxcomplete(struct brcmf_fws_info *fws, struct sk_buff *skb,
 
 	if (!success) {
 		brcmf_fws_lock(fws);
-		hslot = brcmf_skb_htod_tag_get_field(skb, HSLOT);
-		brcmf_fws_txs_process(fws, BRCMF_FWS_TXSTATUS_HOST_TOSSED, hslot,
-				      0, 0, 1, 0, 0);
+		brcmf_fws_txs_process_host_tossed(fws, skb, false, true);
 		brcmf_fws_unlock(fws);
 	} else {
 		brcmf_fws_lock(fws);
