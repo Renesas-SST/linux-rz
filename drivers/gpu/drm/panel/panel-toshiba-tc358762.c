@@ -381,7 +381,7 @@ static void tc358762_gen_write(struct mipi_dsi_device *dsi, const void *data, si
 })
 
 // Support DCS write
-static int tc358762_dcs_write(struct mipi_dsi_device *dsi, const void *data, size_t len)
+static int __maybe_unused tc358762_dcs_write(struct mipi_dsi_device *dsi, const void *data, size_t len)
 {
 	int ret;
 	ret = mipi_dsi_dcs_write_buffer(dsi, data, len);
@@ -401,7 +401,6 @@ static int tc358762_dcs_write(struct mipi_dsi_device *dsi, const void *data, siz
 static int tc358762_dsi_init(struct tc358762 *p)
 {
 	struct mipi_dsi_device *dsi = p->dsi;
-	int ret;
 	/*  commands sent in LP mode */
 	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 

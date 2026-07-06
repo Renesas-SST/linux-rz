@@ -1484,7 +1484,7 @@ static int __init rzv2h_cpg_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int rzv2h_cpg_pm_suspend(struct device *dev)
+static int __maybe_unused rzv2h_cpg_pm_suspend(struct device *dev)
 {
 	struct rzv2h_cpg_priv *priv = dev_get_drvdata(dev);
 	const struct rzv2h_cpg_info *info = priv->info;
@@ -1514,7 +1514,7 @@ static int rzv2h_cpg_pm_suspend(struct device *dev)
 	return 0;
 };
 
-static int rzv2h_cpg_pm_resume(struct device *dev)
+static int __maybe_unused rzv2h_cpg_pm_resume(struct device *dev)
 {
 	struct rzv2h_cpg_priv *priv = dev_get_drvdata(dev);
 	const struct rzv2h_cpg_info *info = priv->info;

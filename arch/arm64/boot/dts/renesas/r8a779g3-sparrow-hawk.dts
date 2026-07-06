@@ -63,7 +63,7 @@
 
 	chosen {
 		bootargs = "ignore_loglevel rw root=/dev/nfs ip=on";
-		stdout-path = "serial0:921600n8";
+		stdout-path = "serial0:115200n8";
 	};
 
 	/* Page 31 / FAN */
@@ -116,6 +116,17 @@
 	memory@600000000 {
 		device_type = "memory";
 		reg = <0x6 0x00000000 0x1 0x00000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		tfa@40000000 {
+			reg = <0x0 0x40000000 0x0 0x8000000>;
+			no-map;
+		};
 	};
 
 	/* Page 27 / DSI to Display */
@@ -942,3 +953,12 @@
 &sensor_thermal_ddr1 {
 	critical-action = "shutdown";
 };
+
+&i2c3 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+};
+

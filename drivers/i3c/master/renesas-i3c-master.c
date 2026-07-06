@@ -1578,7 +1578,7 @@ static const struct of_device_id renesas_i3c_master_of_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, renesas_i3c_master_of_ids);
 
-static int renesas_i3c_noirq_suspend(struct device *dev)
+static int __maybe_unused renesas_i3c_noirq_suspend(struct device *dev)
 {
 	int i;
 	struct renesas_i3c_master *master = dev_get_drvdata(dev);
@@ -1599,13 +1599,13 @@ static int renesas_i3c_noirq_suspend(struct device *dev)
 	return 0;
 }
 
-static int renesas_i3c_suspend(struct device *dev)
+static int __maybe_unused renesas_i3c_suspend(struct device *dev)
 {
 	/* Do nothing. */
 	return 0;
 }
 
-static int renesas_i3c_noirq_resume(struct device *dev)
+static int __maybe_unused renesas_i3c_noirq_resume(struct device *dev)
 {
 	struct renesas_i3c_master *master = dev_get_drvdata(dev);
 	int i;
@@ -1632,7 +1632,7 @@ static int renesas_i3c_noirq_resume(struct device *dev)
 	return 0;
 }
 
-static int renesas_i3c_resume(struct device *dev)
+static int __maybe_unused renesas_i3c_resume(struct device *dev)
 {
 	struct renesas_i3c_master *master = dev_get_drvdata(dev);
 	struct renesas_i3c_xfer *xfer;

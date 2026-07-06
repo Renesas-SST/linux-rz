@@ -173,7 +173,7 @@ static struct rzv2h_irqc_reg_cache {
 	u32		tssr[16];
 } *rzv2h_irqc_reg_cache_data;
 
-static void rzv2h_clear_nmi_int(struct rzv2h_icu_priv *priv)
+static void __maybe_unused rzv2h_clear_nmi_int(struct rzv2h_icu_priv *priv)
 {
 	u32 nscnt = readl_relaxed(priv->base + ICU_NSCNT);
 

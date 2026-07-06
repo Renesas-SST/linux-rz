@@ -40,6 +40,9 @@ struct rzg2l_poeg_chip {
 };
 
 void rzg2l_poeg_clear_bit_export(struct platform_device *poeg_dev, u32 data,
+				 unsigned int offset);
+
+void rzg2l_poeg_clear_bit_export(struct platform_device *poeg_dev, u32 data,
 				unsigned int offset)
 {
 	struct rzg2l_poeg_chip *poeg_chip = platform_get_drvdata(poeg_dev);
@@ -197,7 +200,7 @@ static const struct of_device_id rzg2l_poeg_of_table[] = {
 
 MODULE_DEVICE_TABLE(of, rzg2l_poeg_of_table);
 
-static int rzg2l_poeg_suspend(struct device *dev)
+static int __maybe_unused rzg2l_poeg_suspend(struct device *dev)
 {
 	struct rzg2l_poeg_chip *poeg_chip = dev_get_drvdata(dev);
 
@@ -208,7 +211,7 @@ static int rzg2l_poeg_suspend(struct device *dev)
 	return 0;
 }
 
-static int rzg2l_poeg_resume(struct device *dev)
+static int __maybe_unused rzg2l_poeg_resume(struct device *dev)
 {
 	struct rzg2l_poeg_chip *poeg_chip = dev_get_drvdata(dev);
 
