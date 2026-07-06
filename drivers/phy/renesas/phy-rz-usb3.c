@@ -35,7 +35,7 @@ struct rz_usb3 {
 	struct reset_control *rstc;
 };
 
-void usb2test_phy_init(void __iomem *usbtest)
+static void usb2test_phy_init(void __iomem *usbtest)
 {
 	writel(0x00000303, usbtest + USB2TEST_UTMICTRL2);
 	writel(0x0000020E, usbtest + USB2TEST_RESET);
@@ -57,7 +57,7 @@ void usb2test_phy_init(void __iomem *usbtest)
 	writel(0x00000101, usbtest + USB2TEST_OTGR);
 }
 
-void usb3test_phy_init(void __iomem *usbtest)
+static void usb3test_phy_init(void __iomem *usbtest)
 {
 	writel(USB3TEST_CREGCTRL_PARA_SEL, usbtest + USB3TEST_CREGCTRL);
 	writel(0x00000303, usbtest +  USB3TEST_RSTCTRL);

@@ -360,7 +360,7 @@ static const struct regmap_config tevs_regmap_config = {
 	.cache_type = REGCACHE_NONE,
 };
 
-int tevs_i2c_read(struct tevs *tevs, u16 reg, u8 *val, u16 size)
+static int tevs_i2c_read(struct tevs *tevs, u16 reg, u8 *val, u16 size)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	int ret;
@@ -376,7 +376,7 @@ int tevs_i2c_read(struct tevs *tevs, u16 reg, u8 *val, u16 size)
 	return 0;
 }
 
-int tevs_i2c_read_16b(struct tevs *tevs, u16 reg, u16 *value)
+static int tevs_i2c_read_16b(struct tevs *tevs, u16 reg, u16 *value)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	u8 v[2] = { 0 };
@@ -393,7 +393,7 @@ int tevs_i2c_read_16b(struct tevs *tevs, u16 reg, u16 *value)
 	return 0;
 }
 
-int tevs_i2c_write(struct tevs *tevs, u16 reg, u8 *val, u16 size)
+static int tevs_i2c_write(struct tevs *tevs, u16 reg, u8 *val, u16 size)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	int ret;
@@ -409,7 +409,7 @@ int tevs_i2c_write(struct tevs *tevs, u16 reg, u8 *val, u16 size)
 	return 0;
 }
 
-int tevs_i2c_write_16b(struct tevs *tevs, u16 reg, u16 val)
+static int tevs_i2c_write_16b(struct tevs *tevs, u16 reg, u16 val)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	int ret;
@@ -428,7 +428,7 @@ int tevs_i2c_write_16b(struct tevs *tevs, u16 reg, u16 val)
 	return 0;
 }
 
-int tevs_enable_trigger_mode(struct tevs *tevs, int enable)
+static int tevs_enable_trigger_mode(struct tevs *tevs, int enable)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	int ret = 0;
@@ -456,7 +456,7 @@ int tevs_enable_trigger_mode(struct tevs *tevs, int enable)
 	return ret;
 }
 
-int tevs_check_version(struct tevs *tevs)
+static int tevs_check_version(struct tevs *tevs)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	u8 version[4] = { 0 };
@@ -474,7 +474,7 @@ int tevs_check_version(struct tevs *tevs)
 	return 0;
 }
 
-int tevs_load_header_info(struct tevs *tevs)
+static int tevs_load_header_info(struct tevs *tevs)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&tevs->v4l2_subdev);
 	struct header_info *header = tevs->header_info;
