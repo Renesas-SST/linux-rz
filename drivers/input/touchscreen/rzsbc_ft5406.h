@@ -62,5 +62,7 @@ struct rzsbc_ft5406_data {
 	int retry_count;
 };
 
+void rzsbc_ft5406_start_polling(void);
+
 #endif
 
