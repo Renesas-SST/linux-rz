@@ -155,8 +155,8 @@
 		regulator-max-microvolt = <3300000>;
 
 		gpio = <&m2_gpio 5 GPIO_ACTIVE_HIGH>;
-
-		startup-delay-us = <5000>; /* Measured to take 0.5ms using a scope, set to 5ms so there's a safety factor to ensure the regulator is stable */
+		/* Set to 200 ms for max settling time */
+		startup-delay-us = <200000>;
 		enable-active-high;
 	};
 
@@ -293,7 +293,8 @@
 				port@1 {
 					reg = <1>;
 					adv7533_out: endpoint@1 {
-						remote-endpoint = <&hdmi_con_out>;
+						remote-endpoint =
+							<&hdmi_con_out>;
 					};
 				};
 			};
@@ -355,8 +356,9 @@
 
 	sdhi0_emmc_pins: emmc-pins {
 		sd0-dat-cmd {
-			pins = "SD0DAT0", "SD0DAT1", "SD0DAT2", "SD0DAT3", "SD0DAT4",
-					"SD0DAT5", "SD0DAT6", "SD0DAT7", "SD0CMD";
+			pins = "SD0DAT0", "SD0DAT1", "SD0DAT2", "SD0DAT3",
+				"SD0DAT4", "SD0DAT5", "SD0DAT6", "SD0DAT7",
+					"SD0CMD";
 			input-enable;
 			renesas,output-impedance = <3>;
 			slew-rate = <0>;
@@ -378,7 +380,8 @@
 
 	sdhi1_pins: sd1 {
 		sd1_dat_cmd {
-			pins = "SD1DAT0", "SD1DAT1", "SD1DAT2", "SD1DAT3", "SD1CMD";
+			pins = "SD1DAT0", "SD1DAT1", "SD1DAT2", "SD1DAT3",
+				"SD1CMD";
 			input-enable;
 			renesas,output-impedance = <3>;
 			slew-rate = <0>;
@@ -399,9 +402,10 @@
 		line-name = "rs232_pwr_en";
 #endif
 	};
-	/* cam_pwr_en turns on 1.2V reg, 1.8V_CAM supply and 3.3V_CAM supply. */
-	/* Schematic on SOM shows this being PB2/CAM0&1_PWR but it's actually using */ 
-	/* P74. And you can trace this from the SOM to the SBC schematic */
+	/* cam_pwr_en turns on 1.2V reg, 1.8V_CAM supply and 3.3V_CAM supply.
+	 * Schematic on SOM shows this being PB2/CAM0&1_PWR but it's actually
+	 * using P74.
+	 * And you can trace this from the SOM to the SBC schematic */
 	cam_pwr_en {
 		gpio-hog;
 		gpios = <RZV2H_GPIO(7, 4) GPIO_ACTIVE_HIGH>;
@@ -602,7 +606,8 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&wifi_sdio_pins>;
 
-	// TODO - I think all we need here is the vmmc-supply set to a 3.3Vreg (the Wifi_3v3 reg) 
+	// TODO - I think all we need here is the vmmc-supply
+	// set to a 3.3Vreg (the Wifi_3v3 reg)
 	// and the mmc-powerseq property to set PMIC_EN
 	// As we have learnt, the vmmc-supply property is used to 
 	// set the host OCR mask (ie what voltages the host supports).
@@ -693,15 +698,30 @@
 		otp-burned;
 		32kHz-free-running;
 
-		assigned-clocks = <&versa3 0>,
-			<&versa3 1>,
-			<&versa3 2>,
-			<&versa3 3>,
-			<&versa3 4>,
-			<&versa3 5>;
-		assigned-clock-rates =  <100000000>, <100000000>,
-			<24576000>, <22579200>,
-			<24576000>, <24000000>;
+		assigned-clocks =       <&versa3 0>,
+					<&versa3 1>,
+					<&versa3 2>,
+					<&versa3 3>,
+					<&versa3 4>,
+					<&versa3 5>;
+		/*
+		 * Per IM-SOM-2000 schematic -
+		 * 5L35023B clock generator routing is as follows:
+		 *   out0 REF   = 24 MHz     -> QEXTAL
+		 *   out1 SE1   = 24.576 MHz -> Audio_CLKB
+		 *   out2 SE2   = 32.768 kHz -> RTXIN RTC
+		 *   out3 SE3   = 22.5792 MHz-> Audio_CLKC
+		 *   out4 DIFF1 = 100 MHz    -> PCIE_REFCLK_EP endpoint refclk
+		 *   out5 DIFF2 = 100 MHz    -> PCIE_REFCLK    Root complex
+		 *   					refclk, PCIE_REFCLKP0/N0
+		 * The DIFF1/DIFF2 pair, sourced from PLL1 MUST be 100 MHz for
+		 * PCIe.
+		 * Prior scrambled ordering left them at ~94 MHz which kept the
+		 * PCIe PHY from locking.
+		 */
+		assigned-clock-rates =  <24000000>, <24576000>,
+			<32768>, <22579200>,
+			<100000000>, <100000000>;
 		clock-divider-read-only = <1>, <1>, <1>, <1>, <1>;
 		clock-flags = <2176>, <2176>, <2176>, <2052>, <2176>, <2048>;
 	};
@@ -866,9 +886,12 @@
 		"M2E_BT_ENn", 
 		"M2E_WLAN_ENn";
 		
-		// TODO: define GPIO hogs and Interrupt GPIO
-		// interrupt-parent = <&pinctrl>;
-		// interrupts = <RZV2H_GPIO(9, 7) IRQ_TYPE_LEVEL_LOW>;
+		m2e-wlan-en-hog {
+			gpio-hog;
+			gpios = <15 GPIO_ACTIVE_LOW>;
+			output-low;
+			line-name = "M2E_WLAN_ENn";
+		};
 	};
 
 	// TODO: 9FGV0241 (https://lore.kernel.org/all/20220219015003.507601-2-marex@denx.de/T/)
@@ -967,7 +990,7 @@
 };
 
 &pcie0 {
-	/* Map all possible DDR as inbound ranges (same as rzv2h-evk/rdk) */
+	/* Map all possible DDR as inbound ranges same as rzv2h-evk/rdk */
 	dma-ranges = <0x42000000 0 0x40000000 0 0x40000000 0x4 0x00000000>;
 	vdd-supply = <&VM2M_3V3>;
 	status = "okay";
