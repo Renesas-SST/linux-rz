@@ -1552,6 +1552,19 @@ static void brcmf_escan_prep(struct brcmf_cfg80211_info *cfg,
 			(n_channels & BRCMF_SCAN_PARAMS_COUNT_MASK));
 }
 
+static bool brcmf_sta_connected(struct brcmf_cfg80211_info *cfg)
+{
+	struct brcmf_cfg80211_vif *vif;
+
+	list_for_each_entry(vif, &cfg->vif_list, list) {
+		if (vif->wdev.iftype == NL80211_IFTYPE_STATION &&
+		    test_bit(BRCMF_VIF_STATUS_CONNECTED, &vif->sme_state))
+			return true;
+	}
+
+	return false;
+}
+
 s32 brcmf_notify_escan_complete(struct brcmf_cfg80211_info *cfg,
 				struct brcmf_if *ifp, bool aborted,
 				bool fw_abort)
@@ -6135,6 +6148,39 @@ brcmf_parse_configure_security(struct brcmf_if *ifp,
 	return err;
 }
 
+static int brcmf_cfg80211_verify_ap_bss(struct brcmf_if *ifp,
+					const char *stage)
+{
+	struct brcmf_pub *drvr = ifp->drvr;
+	u8 bssid[ETH_ALEN];
+	u32 is_up;
+	s32 err;
+
+	err = brcmf_fil_cmd_int_get(ifp, BRCMF_C_GET_UP, &is_up);
+	if (err < 0) {
+		bphy_err(drvr, "%s: BRCMF_C_GET_UP error (%d)\n", stage, err);
+		return err;
+	}
+	if (!is_up) {
+		bphy_err(drvr, "%s: AP bsscfg is not up\n", stage);
+		return -EIO;
+	}
+
+	err = brcmf_fil_cmd_data_get(ifp, BRCMF_C_GET_BSSID, bssid,
+				     sizeof(bssid));
+	if (err < 0) {
+		bphy_err(drvr, "%s: BRCMF_C_GET_BSSID error (%d)\n",
+			 stage, err);
+		return err;
+	}
+	if (is_zero_ether_addr(bssid)) {
+		bphy_err(drvr, "%s: AP BSSID is zero\n", stage);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 static s32
 brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 			struct cfg80211_ap_settings *settings)
@@ -6153,13 +6199,18 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 	enum nl80211_iftype dev_role;
 	struct brcmf_fil_bss_enable_le bss_enable;
 	u16 chanspec = chandef_to_chanspec(&cfg->d11inf, &settings->chandef);
-	bool mbss;
+	bool mbss = false;
 	int is_11d;
 	bool supports_11d;
 	bool closednet;
 	struct bcm_xtlv *he_tlv;
 	struct brcmf_p2p_info *p2p = &cfg->p2p;
 	struct brcmf_cfg80211_vif *vif_walk;
+	bool fw_down = false;
+	bool ap_operating;
+	bool sta_connected;
+	bool do_radio_down;
+	bool delayed_mbss = false;
 
 	brcmf_dbg(TRACE, "ctrlchn=%d, center=%d, bw=%d, beacon_interval=%d, dtim_period=%d,\n",
 		  settings->chandef.chan->hw_value,
@@ -6169,11 +6220,8 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 		  settings->ssid, settings->ssid_len, settings->auth_type,
 		  settings->inactivity_timeout);
 	dev_role = ifp->vif->wdev.iftype;
-	mbss = ifp->vif->mbss;
 	if (dev_role == NL80211_IFTYPE_AP &&
 	    brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS)) {
-		/* Decide MBSS mode from runtime active AP peers. */
-		mbss = false;
 		list_for_each_entry(vif_walk, &cfg->vif_list, list) {
 			if (vif_walk == ifp->vif)
 				continue;
@@ -6188,6 +6236,8 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 			}
 		}
 	}
+	ap_operating = brcmf_is_apmode_operating(wiphy);
+	sta_connected = brcmf_sta_connected(cfg);
 	brcmf_dbg(TRACE, "mbss %s\n", mbss ? "enabled" : "disabled");
 
 	/* store current 11d setting */
@@ -6255,16 +6305,23 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 			}
 		}
 
-		if ((dev_role == NL80211_IFTYPE_AP) &&
-		    ((ifp->ifidx == 0) ||
-		     (!brcmf_feat_is_enabled(ifp, BRCMF_FEAT_RSDB) &&
-		      !brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MCHAN)))) {
+		do_radio_down = (dev_role == NL80211_IFTYPE_AP) &&
+				((ifp->ifidx == 0) ||
+				 (!brcmf_feat_is_enabled(ifp, BRCMF_FEAT_RSDB) &&
+				  !brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MCHAN)));
+		if (do_radio_down && (ap_operating || sta_connected)) {
+			brcmf_dbg(INFO,
+				  "skip shared radio down while AP/STA traffic is active\n");
+			do_radio_down = false;
+		}
+		if (do_radio_down) {
 			err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_DOWN, 1);
 			if (err < 0) {
 				bphy_err(drvr, "BRCMF_C_DOWN error %d\n",
 					 err);
 				goto exit;
 			}
+			fw_down = true;
 			brcmf_fil_iovar_int_set(ifp, "apsta", 0, NULL);
 		}
 
@@ -6281,8 +6338,49 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 	ifp->isap = false;
 	/* Interface specific setup */
 	if (dev_role == NL80211_IFTYPE_AP) {
-		if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS) && !mbss)
-			brcmf_fil_iovar_int_set(ifp, "mbss", 1, NULL);
+		u32 is_up;
+
+		if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS) && !mbss) {
+			err = brcmf_fil_cmd_int_get(ifp, BRCMF_C_GET_UP,
+						    &is_up);
+			if (err < 0) {
+				bphy_err(drvr, "BRCMF_C_GET_UP error (%d)\n",
+					 err);
+				goto exit;
+			}
+
+			/*
+			 * Enable firmware MBSS mode for the first SAP as well as
+			 * later MBSS APs. When STA/AP traffic is active, delay
+			 * runtime MBSS enable until this AP bsscfg is fully up
+			 * so firmware dyn_up_all reads valid AP state.
+			 */
+			if (is_up && !fw_down && (ap_operating || sta_connected)) {
+				delayed_mbss = true;
+				brcmf_dbg(INFO,
+					  "delay mbss enable until AP bsscfg is up\n");
+			} else if (is_up && !fw_down) {
+				err = brcmf_fil_cmd_int_set(ifp,
+							    BRCMF_C_DOWN, 1);
+				if (err < 0) {
+					bphy_err(drvr, "BRCMF_C_DOWN error (%d)\n",
+						 err);
+					goto exit;
+				}
+				fw_down = true;
+			}
+
+			if (!delayed_mbss) {
+				err = brcmf_fil_iovar_int_set(ifp, "mbss", 1,
+							      NULL);
+				if (err < 0) {
+					bphy_err(drvr, "set mbss error (%d)\n",
+						 err);
+					goto exit;
+				}
+				mbss = true;
+			}
+		}
 
 		if (!test_bit(BRCMF_VIF_STATUS_AP_CREATED, &ifp->vif->sme_state)) {
 			bss_enable.bsscfgidx = cpu_to_le32(ifp->bsscfgidx);
@@ -6359,6 +6457,20 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 			goto exit;
 		}
 
+		err = brcmf_cfg80211_verify_ap_bss(ifp, "post SET_SSID");
+		if (err < 0)
+			goto exit;
+
+		if (delayed_mbss) {
+			err = brcmf_fil_iovar_int_set(ifp, "mbss", 1, NULL);
+			if (err < 0) {
+				bphy_err(drvr, "set mbss error (%d)\n",
+					 err);
+				goto exit;
+			}
+			mbss = true;
+		}
+
 		closednet =
 			(settings->hidden_ssid != NL80211_HIDDEN_SSID_NOT_IN_USE);
 		err = brcmf_fil_iovar_int_set(ifp, "closednet",	closednet, NULL);
@@ -6426,9 +6538,11 @@ brcmf_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
 	brcmf_net_setcarrier(ifp, true);
 
 exit:
-	if ((err) && (!mbss)) {
-		brcmf_set_mpc(ifp, 1);
-		brcmf_configure_arp_nd_offload(ifp, true);
+	if (err) {
+		if (!mbss) {
+			brcmf_set_mpc(ifp, 1);
+			brcmf_configure_arp_nd_offload(ifp, true);
+		}
 	} else {
 		cfg->num_softap++;
 		brcmf_dbg(TRACE, "Num of SoftAP %u\n", cfg->num_softap);
@@ -7568,10 +7682,7 @@ struct cfg80211_ops *brcmf_cfg80211_get_ops(struct brcmf_mp_device *settings)
 struct brcmf_cfg80211_vif *brcmf_alloc_vif(struct brcmf_cfg80211_info *cfg,
 					   enum nl80211_iftype type)
 {
-	struct brcmf_cfg80211_vif *vif_walk;
 	struct brcmf_cfg80211_vif *vif;
-	bool mbss;
-	struct brcmf_if *ifp = brcmf_get_ifp(cfg->pub, 0);
 
 	brcmf_dbg(TRACE, "allocating virtual interface (size=%zu)\n",
 		  sizeof(*vif));
@@ -7584,18 +7695,6 @@ struct brcmf_cfg80211_vif *brcmf_alloc_vif(struct brcmf_cfg80211_info *cfg,
 	init_completion(&vif->mgmt_tx);
 
 	brcmf_init_prof(&vif->profile);
-
-	if (type == NL80211_IFTYPE_AP &&
-	    brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MBSS)) {
-		mbss = false;
-		list_for_each_entry(vif_walk, &cfg->vif_list, list) {
-			if (vif_walk->wdev.iftype == NL80211_IFTYPE_AP) {
-				mbss = true;
-				break;
-			}
-		}
-		vif->mbss = mbss;
-	}
 
 	init_completion(&vif->mgmt_tx);
 	list_add_tail(&vif->list, &cfg->vif_list);
