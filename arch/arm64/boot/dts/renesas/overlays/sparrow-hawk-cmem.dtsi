@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright (C) 2026 Renesas Electronics Corporation
+ */
+
+/dts-v1/;
+/plugin/;
+
+&{/} {
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		range;
+
+		/* global autoconfigured region for contiguous allocations */
+		cma@80000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x80000000 0x0 0x23000000>;
+			linux,cma-default;
+		};
+	
+		region_40bit: region_40bit@600000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x6 0x00000000 0x0 0x40000000>;
+		};
+
+		vdsp0_region: vdsp0_region@5d000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x5d000000 0x0 0x00800000>;
+		};
+
+		vdsp1_region: vdsp1_region@5d800000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x5d800000 0x0 0x00800000>;
+		};
+
+		vdsp2_region: vdsp2_region@5e000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x5e000000 0x0 0x00800000>;
+		};
+
+		vdsp3_region: vdsp3_region@5e800000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x5e800000 0x0 0x00800000>;
+		};
+
+		pap_region: pap_region@5f000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x5f000000 0x0 0x00400000>;
+		};
+	};
+
+	cmem {
+		compatible = "renesas,cmem";
+		memory-region = <&vdsp0_region &vdsp1_region
+				 &vdsp2_region &vdsp3_region
+				 &pap_region &region_40bit>;
+	};
+};
+
