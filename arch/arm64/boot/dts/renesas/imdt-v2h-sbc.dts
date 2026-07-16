@@ -83,24 +83,6 @@
 			reusable;
 			reg = <0x2 0x40000000 0x0 0x20000000>;
 		};
-
-		vdev0vring0: vdev0vring0@43000000 {
-			compatible = "shared-dma-pool";
-			reg = <0x0 0x43000000 0x0 0x50000>;
-			no-map;
-		};
-
-		vdev0vring1: vdev0vring1@43050000 {
-			compatible = "shared-dma-pool";
-			reg = <0x0 0x43050000 0x0 0x50000>;
-			no-map;
-		};
-
-		vdev0buffer: vdev0buffer@43200000 {
-			compatible = "shared-dma-pool";
-			reg = <0x0 0x43200000 0x0 0x300000>;
-			no-map;
-		};
 	};
 
 	udmabuf@0 {

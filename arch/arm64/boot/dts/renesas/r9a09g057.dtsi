@@ -402,7 +402,7 @@
 		};
 
 		cpg: clock-controller@10420000 {
-			compatible = "renesas,r9a09g057-cpg";
+			compatible = "renesas,r9a09g057-cpg", "syscon";
 			reg = <0 0x10420000 0 0x10000>;
 			clocks = <&audio_extal_clk>, <&audio_clka>,
 				 <&audio_clkb>, <&audio_clkc>,
@@ -1115,6 +1115,59 @@
 			power-domains = <&cpg>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		cm33_rproc: cm33 {
+			compatible = "renesas,rzv2h-cm33";
+			reg = <0x0 0x08000000 0x0 0x00fffff>,
+				  <0x0 0x40010000 0x0 0x007fffff>,
+				  <0x0 0x42f00000 0x0 0x01000000>;
+			reg-names = "cm33_sram", "cm33_ddr", "cm33_rsc_table";
+			renesas,rz-core = <0x0>;
+			renesas,rz-cpg  = <&cpg>;
+			renesas,rz-sysc = <&sys>;
+			renesas,rz-bootaddrs = <0x08003000>, <0x18003000>;
+			renesas,rz-rsctbl = <0x42f00000>;
+			clocks = <&cpg CPG_MOD R9A09G057_CM33_CLK1>;
+			clock-names = "cm33clk1";
+			resets = <&cpg R9A09G057_CM33_RESET2>,
+				 <&cpg R9A09G057_CM33_RESET0>,
+				 <&cpg R9A09G057_CM33_RESET1>;
+			reset-names = "cm33reset2", "cm33reset0", "cm33reset1";
+			power-domains = <&cpg>;
+			status = "disabled";
+		};
+
+		cr8_0_rproc: cr8_0 {
+			compatible = "renesas,rzv2h-cr8";
+			reg = <0x0 0x08180000 0x0 0x00080000>, /* cr8_sram3 */
+				<0x0 0x12040000 0x0 0x0003ffff>,   /* cr8_tcm   */
+				<0x0 0x40800000 0x0 0x00100000>,   /* cr8_ddr: small, 0x40800000-0x40900000 */
+				<0x0 0x43800000 0x0 0x00f00000>,   /* cr8_ddr2: vring+buffer 0x43800000-0x44700000 */
+				<0x0 0x42f02000 0x0 0x00004000>;   /* cr8_rsc_table: covers mhu 0x42f03000 */
+			reg-names = "cr8_sram3", "cr8_tcm", "cr8_ddr", "cr8_ddr2", "cr8_rsc_table";
+			renesas,rz-core = <0x1>;
+			renesas,rz-cpg  = <&cpg>;
+			renesas,rz-sysc = <&sys>;
+			renesas,rz-rsctbl = <0x42f02000>;
+			power-domains = <&cpg>;
+			status = "disabled";
+		};
+
+		cr8_1_rproc: cr8_1 {
+			compatible = "renesas,rzv2h-cr8";
+			reg = <0x0 0x08180000 0x0 0x000c0000>, /* cr8_sram3: covers 0x081bfffc */
+				<0x0 0x12080000 0x0 0x0003ffff>,   /* cr8_tcm   */
+				<0x0 0x41800000 0x0 0x00100000>,   /* cr8_ddr: small, 0x41800000-0x41900000 */
+				<0x0 0x44000000 0x0 0x00f00000>,   /* cr8_ddr2: vring+buffer 0x44000000-0x44f00000 */
+				<0x0 0x42f04000 0x0 0x00004000>;   /* cr8_rsc_table: covers mhu 0x42f05000 */
+			reg-names = "cr8_sram3", "cr8_tcm", "cr8_ddr", "cr8_ddr2", "cr8_rsc_table";
+			renesas,rz-core = <0x2>;
+			renesas,rz-cpg  = <&cpg>;
+			renesas,rz-sysc = <&sys>;
+			renesas,rz-rsctbl = <0x42f04000>;
+			power-domains = <&cpg>;
 			status = "disabled";
 		};
 
@@ -3435,26 +3488,6 @@
 					dma-names = "tx", "rx";
 				};
 			};
-		};
-
-		cm33_rproc: cm33 {
-			compatible = "renesas,rz-cm33";
-			reg = <0x0 0x08000000 0x0 0x00FFFFF>,
-			      <0x0 0x40010000 0x0 0x3EF0000>;
-			reg-names = "cm33_sram", "cm33_ddr";
-			memory-region = <&vdev0vring0>, <&vdev0vring1>, <&vdev0buffer>;
-			renesas,rz-cpg = <&cpg>;
-			renesas,rz-sysc = <&sys>;
-			renesas,rz-bootaddrs = <0x08003000>, <0x18003000>;
-			renesas,rz-rsctbl = <0x42F00000>;
-			clocks = <&cpg CPG_MOD R9A09G057_CM33_CLK1>;
-			clock-names = "cm33clk1";
-			resets = <&cpg R9A09G057_CM33_RESET2>,
-				 <&cpg R9A09G057_CM33_RESET0>,
-				 <&cpg R9A09G057_CM33_RESET1>;
-			reset-names = "cm33reset2", "cm33reset0", "cm33reset1";
-			power-domains = <&cpg>;
-			status = "okay";
 		};
 	};
 
