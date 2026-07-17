@@ -967,8 +967,7 @@
 };
 
 &pcie0 {
-	/* Map all possible DDR as inbound ranges */
-	ranges = <0x02000000 0x0 0x30000000 0x0 0x30000000 0x0 0x18000000>;
+	/* Map all possible DDR as inbound ranges (same as rzv2h-evk/rdk) */
 	dma-ranges = <0x42000000 0 0x40000000 0 0x40000000 0x4 0x00000000>;
 	vdd-supply = <&VM2M_3V3>;
 	status = "okay";
