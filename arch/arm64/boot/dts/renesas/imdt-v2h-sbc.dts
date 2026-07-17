@@ -95,6 +95,11 @@
 	};
 };
 
+&gpu {
+	status = "okay";
+	mali-supply = <&reg_0p8v>;
+};
+
 &opencva0{
 	status = "okay";
 };

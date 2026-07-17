@@ -32,6 +32,16 @@
 		compatible = "renesas,vspm_if";
 	};
 
+	reg_0p8v: regulator-0p8v {
+		compatible = "regulator-fixed";
+
+		regulator-name = "fixed-0.8V";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <800000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
 	reg_1p8v: regulator0 {
 		compatible = "regulator-fixed";
 
