@@ -18,6 +18,7 @@
 
 #define PD_CPU_NOCR	(PD_CPU | PD_NO_CR) /* CPU area lacks CR */
 #define PD_ALWAYS_ON	PD_NO_CR	  /* Always-on area */
+#define PD_FORCE_ALWAYS_ON  BIT(3) /* Power-on at initialization and remain always-on area */
 
 /*
  * Description of a Power Area

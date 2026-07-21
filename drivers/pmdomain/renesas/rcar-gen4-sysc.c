@@ -237,7 +237,7 @@ static int __init rcar_gen4_sysc_pd_setup(struct rcar_gen4_sysc_pd *pd)
 		 */
 		pr_debug("PM domain %s contains %s\n", name, "SCU");
 		genpd->flags |= GENPD_FLAG_ALWAYS_ON;
-	} else if (pd->flags & PD_NO_CR) {
+	} else if (pd->flags & (PD_NO_CR | PD_FORCE_ALWAYS_ON)) {
 		/*
 		 * This domain cannot be turned off.
 		 */
