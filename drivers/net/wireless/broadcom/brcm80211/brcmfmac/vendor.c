@@ -81,7 +81,7 @@ static int brcmf_cfg80211_vndr_cmds_dcmd_handler(struct wiphy *wiphy,
 					     payload);
 	else
 		ret = brcmf_fil_cmd_data_get(ifp, cmdhdr->cmd, dcmd_buf,
-					     payload);
+					     ret_len);
 	if (ret != 0)
 		goto exit;
 
