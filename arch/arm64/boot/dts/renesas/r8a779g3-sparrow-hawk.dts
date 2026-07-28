@@ -199,6 +199,13 @@
 		gpios-states = <1>;
 		states = <1800000 0>, <3300000 1>;
 	};
+
+	firmware {
+		optee {
+			compatible = "linaro,optee-tz";
+			method = "smc";
+		};
+	};
 };
 
 /* Use thermal-idle cooling for all SoC cores */
