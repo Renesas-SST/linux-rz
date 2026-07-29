@@ -36,7 +36,13 @@
 
 #define REGULATOR_DISABLE_SLEEP_TIME_MS 25 /* Chosen to be 25 ms as this is a generous amount of time for a regulator to turn off*/
 #define POST_RESET_SLEEP_TIME_MS 1         /* 1ms sleep to give time for the Reset pin to assert */
-#define CLOCK_STABLE_SLEEP_TIME_MS 100     /* PCIE spec requires that the reset pulse width isat least 100ms */
+
+/*
+ * Minimum reset pulse is 100ms per pcie spec but IMDT board tests show
+ * some M.2 devices on pcie E key port need up to 700ms after reset
+ * for them to come up reliably.
+ */
+#define CLOCK_STABLE_SLEEP_TIME_MS 700
 
 struct rzv2h_msi {
 	DECLARE_BITMAP(used, INT_PCI_MSI_NR);
