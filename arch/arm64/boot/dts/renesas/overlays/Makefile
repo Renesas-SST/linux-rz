@@ -26,3 +26,5 @@ dtb-y += imdt-v2h-sbc-1.0-cru-csi23-ar1335.dtbo
 
 # RCar V4H Sparrow-Hawk UIO overlay
 dtb-y += sparrow-hawk-1.0-uio.dtbo
+dtb-y += sparrow-hawk-1.0-cru-csi-j1-imx219.dtso
+dtb-y += sparrow-hawk-1.0-cru-csi-j2-imx219.dtso
