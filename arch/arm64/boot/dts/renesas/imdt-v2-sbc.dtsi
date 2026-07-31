@@ -892,6 +892,22 @@
 			output-low;
 			line-name = "M2E_WLAN_ENn";
 		};
+
+		/*
+		 * M.2 Key-E Bluetooth enable
+		 * The missing counterpart to the WLAN enable above.
+		 * The AX210 combo module gates its BT USB 2.0
+		 * function on M2E_BT_ENn to active-low.
+		 * This line floats without a hog and BT stays powered off.
+		 * So no device shows for 8087:*. No enumeration.
+		 * Drive it low to assert the enable.
+		 */
+		m2e-bt-en-hog {
+			gpio-hog;
+			gpios = <14 GPIO_ACTIVE_LOW>;
+			output-low;
+			line-name = "M2E_BT_ENn";
+		};
 	};
 
 	// TODO: 9FGV0241 (https://lore.kernel.org/all/20220219015003.507601-2-marex@denx.de/T/)
