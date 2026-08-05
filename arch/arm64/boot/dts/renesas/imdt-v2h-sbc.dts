@@ -143,6 +143,17 @@
 	status = "okay";
 };
 
+/*
+ * USB3 PHY for xhci1. The board enables xhci1 but the SoC leaves this PHY
+ * disabled by default; xhci1 references it via phys = <&usb3_phy1>, so without
+ * it the controller can't acquire a PHY and never finishes probing (no xHCI
+ * root hub appears at all). Enable it so devices on this channel - including
+ * the M.2 Key-E USB (Bluetooth) - can enumerate.
+ */
+&usb3_phy1 {
+	status = "okay";
+};
+
 &usb21phyrst {
 	status = "okay";
 };
