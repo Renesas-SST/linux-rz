@@ -1094,6 +1094,14 @@
 	status = "okay";
 };
 
+/*
+ * USB3 PHY for xhci0 - the SoC leaves it disabled by default, which stalls
+ * xhci0 probe (it references phys = <&usb3_phy0>). Enable so xhci0 comes up.
+ */
+&usb3_phy0 {
+	status = "okay";
+};
+
 
 &usb20phyrst {
 	status = "okay";
