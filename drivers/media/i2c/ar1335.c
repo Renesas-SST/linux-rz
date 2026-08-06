@@ -1477,7 +1477,6 @@ static int ar1335_probe(struct i2c_client *client)
 	struct device *dev = &client->dev;
 	struct fwnode_handle *endpoint;
 	struct ar1335_dev *sensor;
-	unsigned int cnt;
 	int ret;
 
 	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);

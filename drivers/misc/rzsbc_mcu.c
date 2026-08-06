@@ -70,16 +70,22 @@ static int string_to_byte(const char *source, unsigned char *destination, int si
 static int send_cmds(struct i2c_client *client, const char *buf)
 {
 	int ret, size = strlen(buf), retry = 5;
-	unsigned char byte_cmd[size/2];
+	unsigned char *byte_cmd;
 
 	if ((size%2) != 0) {
 		LOG_ERR("size should be even\n");
 		return -EINVAL;
 	}
 
+	byte_cmd = kmalloc(size / 2, GFP_KERNEL);
+	if (!byte_cmd)
+		return -ENOMEM;
+
 	LOG_INFO("%s\n", buf);
 
-	string_to_byte(buf, byte_cmd, size);
+	ret = string_to_byte(buf, byte_cmd, size);
+	if (ret)
+		goto out_free;
 
 	while (retry-- > 0) {
 		ret = i2c_master_send(client, byte_cmd, size/2);
@@ -91,11 +97,16 @@ static int send_cmds(struct i2c_client *client, const char *buf)
 
 	if (ret <= 0) {
 		LOG_ERR("send command failed\n");
-		return ret != 0 ? ret : -ECOMM;
+		ret = ret != 0 ? ret : -ECOMM;
+		goto out_free;
 	}
 
 	msleep(20);
-	return 0;
+	ret = 0;
+
+out_free:
+	kfree(byte_cmd);
+	return ret;
 }
 
 static int recv_cmds(struct i2c_client *client, char *buf, int size)

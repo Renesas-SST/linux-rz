@@ -143,7 +143,7 @@ static int rzg2l_cru_s_ctrl(struct v4l2_ctrl *ctrl)
 						 ctrl_handler);
 	int ret = 0;
 
-	cru_dbg(cru,"Number of buffers is being set to %lu \n", RZG2L_CRU_HW_BUFFER_VALUE);
+	cru_dbg(cru,"Number of buffers is being set to %u \n", RZG2L_CRU_HW_BUFFER_VALUE);
 	switch (ctrl->id) {
 	case V4L2_CID_MIN_BUFFERS_FOR_CAPTURE:
 		if ((cru->state == RZG2L_CRU_DMA_STOPPED) ||

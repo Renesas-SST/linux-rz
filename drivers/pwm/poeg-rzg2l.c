@@ -40,6 +40,9 @@ struct rzg2l_poeg_chip {
 };
 
 void rzg2l_poeg_clear_bit_export(struct platform_device *poeg_dev, u32 data,
+				 unsigned int offset);
+
+void rzg2l_poeg_clear_bit_export(struct platform_device *poeg_dev, u32 data,
 				unsigned int offset)
 {
 	struct rzg2l_poeg_chip *poeg_chip = platform_get_drvdata(poeg_dev);
@@ -238,4 +241,3 @@ module_platform_driver(rzg2l_poeg_driver);
 
 MODULE_DESCRIPTION("Renesas RZG2L POEG Driver");
 MODULE_LICENSE("GPL v2");
-

@@ -42,6 +42,8 @@
 };
 
 &dsi_adaptor_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
 	status = "okay";
 	touch: gt911@14 {
 		compatible = "goodix,gt911";
@@ -55,6 +57,9 @@
 };
 
 &dsi0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
 	panel@0 {
 		compatible = "imdt,im-msc-006";
 		power-supply = <&disp_reg>;
