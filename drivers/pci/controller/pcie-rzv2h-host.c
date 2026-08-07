@@ -50,7 +50,7 @@ struct rzv2h_msi {
 	unsigned long pages;
 	unsigned long virt_pages;
 	struct mutex map_lock;
-	spinlock_t mask_lock;
+	raw_spinlock_t mask_lock;
 	int irq;
 };
 
@@ -891,11 +891,11 @@ static void rzv2h_msi_irq_mask(struct irq_data *d)
 	unsigned long flags;
 	u32 value;
 
-	spin_lock_irqsave(&msi->mask_lock, flags);
+	raw_spin_lock_irqsave(&msi->mask_lock, flags);
 	value = rzv2h_pci_read_reg(pcie, PCI_INTX_RCV_INTERRUPT_ENABLE_REG);
 	value &= ~BIT(d->hwirq);
 	rzv2h_pci_write_reg(pcie, value, PCI_INTX_RCV_INTERRUPT_ENABLE_REG);
-	spin_unlock_irqrestore(&msi->mask_lock, flags);
+	raw_spin_unlock_irqrestore(&msi->mask_lock, flags);
 }
 
 static void rzv2h_msi_irq_unmask(struct irq_data *d)
@@ -905,11 +905,11 @@ static void rzv2h_msi_irq_unmask(struct irq_data *d)
 	unsigned long flags;
 	u32 value;
 
-	spin_lock_irqsave(&msi->mask_lock, flags);
+	raw_spin_lock_irqsave(&msi->mask_lock, flags);
 	value = rzv2h_pci_read_reg(pcie, PCI_INTX_RCV_INTERRUPT_ENABLE_REG);
 	value |= BIT(d->hwirq);
 	rzv2h_pci_write_reg(pcie, value, PCI_INTX_RCV_INTERRUPT_ENABLE_REG);
-	spin_unlock_irqrestore(&msi->mask_lock, flags);
+	raw_spin_unlock_irqrestore(&msi->mask_lock, flags);
 }
 
 static void rzv2h_compose_msi_msg(struct irq_data *data, struct msi_msg *msg)
@@ -1091,7 +1091,7 @@ static int rzv2h_pcie_enable_msi(struct rzv2h_pcie_host *host)
 	int err;
 
 	mutex_init(&msi->map_lock);
-	spin_lock_init(&msi->mask_lock);
+	raw_spin_lock_init(&msi->mask_lock);
 
 	err = of_address_to_resource(dev->of_node, 0, &res);
 	if (err)
