@@ -725,8 +725,12 @@ EXPORT_SYMBOL_GPL(devm_stmmac_probe_config_dt);
 struct clk *stmmac_pltfr_find_clk(struct plat_stmmacenet_data *plat_dat,
 				  const char *name)
 {
+	if (!name)
+		return NULL;
+
 	for (int i = 0; i < plat_dat->num_clks; i++)
-		if (strcmp(plat_dat->clks[i].id, name) == 0)
+		if (plat_dat->clks[i].id &&
+		    strcmp(plat_dat->clks[i].id, name) == 0)
 			return plat_dat->clks[i].clk;
 
 	return NULL;
