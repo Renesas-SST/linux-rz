@@ -344,6 +344,9 @@
  * End of controller registers.
  */
 
+/* RICOH WL reset register */
+#define RICOH_WL_RST_REG	0xF0
+
 #define SDHCI_MAX_DIV_SPEC_200	256
 #define SDHCI_MAX_DIV_SPEC_300	2046
 
@@ -397,6 +400,7 @@ struct sdhci_adma2_64_desc {
 #define ADMA2_TRAN_VALID	0x21
 #define ADMA2_NOP_END_VALID	0x3
 #define ADMA2_END		0x2
+#define ADMA2_INT		0x4
 
 /*
  * Maximum segments assuming a 512KiB maximum requisition size and a minimum
@@ -536,6 +540,8 @@ struct sdhci_host {
 #define SDHCI_QUIRK2_USE_32BIT_BLK_CNT			(1<<18)
 /* Issue CMD and DATA reset together */
 #define SDHCI_QUIRK2_ISSUE_CMD_DAT_RESET_TOGETHER	(1<<19)
+/* Cypress internal FGPA HC 2.0 broken multi descriptor */
+#define SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN		(1<<31)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
@@ -675,6 +681,9 @@ struct sdhci_host {
 
 	u64			data_timeout;
 
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	bool			sdclk_gated;	/* Bus clock output is gated */
+#endif
 	unsigned long private[] ____cacheline_aligned;
 };
 
@@ -724,6 +733,9 @@ struct sdhci_ops {
 	void    (*dump_vendor_regs)(struct sdhci_host *host);
 	void	(*dump_uhs2_regs)(struct sdhci_host *host);
 	void    (*uhs2_pre_detect_init)(struct sdhci_host *host);
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	void	(*sd_clock_gate)(struct sdhci_host *host, bool on);
+#endif
 };
 
 #ifdef CONFIG_MMC_SDHCI_IO_ACCESSORS
@@ -834,7 +846,7 @@ bool sdhci_needs_reset(struct sdhci_host *host, struct mmc_request *mrq);
 bool sdhci_data_line_cmd(struct mmc_command *cmd);
 void sdhci_mod_timer(struct sdhci_host *host, struct mmc_request *mrq, unsigned long timeout);
 void sdhci_initialize_data(struct sdhci_host *host, struct mmc_data *data);
-void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_data *data);
+void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_command *cmd);
 void __sdhci_finish_mrq(struct sdhci_host *host, struct mmc_request *mrq);
 void sdhci_finish_mrq(struct sdhci_host *host, struct mmc_request *mrq);
 void __sdhci_finish_data_common(struct sdhci_host *host, bool defer_reset);
@@ -872,6 +884,10 @@ void sdhci_complete_work(struct work_struct *work);
 irqreturn_t sdhci_thread_irq(int irq, void *dev_id);
 void sdhci_adma_write_desc(struct sdhci_host *host, void **desc,
 			   dma_addr_t addr, int len, unsigned int cmd);
+
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+void sdhci_sdclk_gate(struct mmc_host *mmc, bool enable);
+#endif
 
 #ifdef CONFIG_PM
 bool sdhci_enable_irq_wakeups(struct sdhci_host *host);

@@ -43,6 +43,14 @@
 #include "sdhci-pci.h"
 #include "sdhci-uhs2.h"
 
+char *override_ds_type = " ";
+module_param(override_ds_type, charp, 0);
+
+/* Disable RICOH reset */
+bool disable_ricoh_rst = 0;
+module_param(disable_ricoh_rst, bool, 0);
+
+ static void sdhci_pci_hw_reset(struct sdhci_host *host);
 static void sdhci_pci_hw_reset(struct sdhci_host *host);
 
 #ifdef CONFIG_PM_SLEEP
@@ -226,6 +234,40 @@ static void sdhci_pci_dumpregs(struct mmc_host *mmc)
 	sdhci_dumpregs(mmc_priv(mmc));
 }
 
+static int ricoh_select_drive_strength(struct mmc_card *card,
+				       unsigned int max_dtr, int host_drv,
+				       int card_drv, int *drv_type)
+{
+	int drv_strength = 0;
+
+	pr_err("override drive strength to type %c\n", override_ds_type[0]);
+
+	switch (override_ds_type[0]) {
+	case 'a':
+	case 'A':
+		drv_strength = MMC_SET_DRIVER_TYPE_A;
+		break;
+	case 'b':
+	case 'B':
+		drv_strength = MMC_SET_DRIVER_TYPE_B;
+		break;
+	case 'c':
+	case 'C':
+		drv_strength = MMC_SET_DRIVER_TYPE_C;
+		break;
+	case 'd':
+	case 'D':
+		drv_strength = MMC_SET_DRIVER_TYPE_D;
+		break;
+	default:
+		pr_err("unknown overrided drive strength %c\n",
+		       override_ds_type[0]);
+		pr_err("Set MMC driver type to B\n");
+	}
+
+	return drv_strength;
+}
+
 /*****************************************************************************\
  *                                                                           *
  * Hardware specific quirk handling                                          *
@@ -237,6 +279,13 @@ static int ricoh_probe(struct sdhci_pci_chip *chip)
 	if (chip->pdev->subsystem_vendor == PCI_VENDOR_ID_SAMSUNG ||
 	    chip->pdev->subsystem_vendor == PCI_VENDOR_ID_SONY)
 		chip->quirks |= SDHCI_QUIRK_NO_CARD_NO_RESET;
+	return 0;
+}
+
+static int ricoh_probe_slot(struct sdhci_pci_slot *slot)
+{
+	slot->host->mmc_host_ops.select_drive_strength =
+		ricoh_select_drive_strength;
 	return 0;
 }
 
@@ -266,8 +315,23 @@ static int ricoh_mmc_resume(struct sdhci_pci_chip *chip)
 }
 #endif
 
+static void ricoh_reset(struct pci_dev *pdev, struct sdhci_host *host)
+{
+	pr_err("give RST to dongle for RICOH SDHC\n");
+	sdhci_writel(host, 0x8, RICOH_WL_RST_REG);
+	msleep(100);
+	sdhci_writel(host, 0x0, RICOH_WL_RST_REG);
+	pr_err("end of RICOH reset\n");
+}
+
+static const struct sdhci_pci_fixes sdhci_broadcom_fpga = {
+	.quirks         = SDHCI_QUIRK_FORCE_DMA |
+			  SDHCI_QUIRK_CLOCK_BEFORE_RESET,
+	.quirks2	= SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN,
+};
 static const struct sdhci_pci_fixes sdhci_ricoh = {
 	.probe		= ricoh_probe,
+	.probe_slot     = ricoh_probe_slot,
 	.quirks		= SDHCI_QUIRK_32BIT_DMA_ADDR |
 			  SDHCI_QUIRK_FORCE_DMA |
 			  SDHCI_QUIRK_CLOCK_BEFORE_RESET,
@@ -1960,6 +2024,7 @@ static const struct pci_device_id pci_ids[] = {
 	SDHCI_PCI_DEVICE(GLI, 9755, gl9755),
 	SDHCI_PCI_DEVICE(GLI, 9763E, gl9763e),
 	SDHCI_PCI_DEVICE(GLI, 9767, gl9767),
+	SDHCI_PCI_DEVICE(BROADCOM, FPGA, broadcom_fpga),
 	SDHCI_PCI_DEVICE_CLASS(AMD, SYSTEM_SDHCI, PCI_CLASS_MASK, amd),
 	/* Generic SD host controller */
 	{PCI_DEVICE_CLASS(SYSTEM_SDHCI, PCI_CLASS_MASK)},
@@ -2229,6 +2294,9 @@ static struct sdhci_pci_slot *sdhci_pci_probe_slot(
 		ret = sdhci_add_host(host);
 	if (ret)
 		goto remove;
+
+	if (!disable_ricoh_rst && pdev->vendor == PCI_VENDOR_ID_RICOH)
+		ricoh_reset(pdev, host);
 
 	/*
 	 * Check if the chip needs a separate GPIO for card detect to wake up

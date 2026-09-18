@@ -65,12 +65,16 @@ static int mmc_io_rw_direct_host(struct mmc_host *host, int write, unsigned fn,
 	struct mmc_command cmd = {};
 	int err;
 
-	if (fn > 7)
+	if (fn > 7) {
+		pr_err("%s() invalid function number %d\n", __func__, fn);
 		return -EINVAL;
+	}
 
 	/* sanity check */
-	if (addr & ~0x1FFFF)
+	if (addr & ~0x1FFFF) {
+		pr_err("%s() sanity check failed, addr 0x%x\n", __func__, addr);
 		return -EINVAL;
+	}
 
 	cmd.opcode = SD_IO_RW_DIRECT;
 	cmd.arg = write ? 0x80000000 : 0x00000000;
@@ -87,12 +91,19 @@ static int mmc_io_rw_direct_host(struct mmc_host *host, int write, unsigned fn,
 	if (mmc_host_is_spi(host)) {
 		/* host driver already reported errors */
 	} else {
-		if (cmd.resp[0] & R5_ERROR)
+		if (cmd.resp[0] & R5_ERROR) {
+			pr_err("%s() R5_ERROR, resp 0x%08x\n",
+			       __func__, cmd.resp[0]);
 			return -EIO;
-		if (cmd.resp[0] & R5_FUNCTION_NUMBER)
+		} else if (cmd.resp[0] & R5_FUNCTION_NUMBER) {
+			pr_err("%s() R5_FUNCTION_NUMBER, resp 0x%08x\n",
+			       __func__, cmd.resp[0]);
 			return -EINVAL;
-		if (cmd.resp[0] & R5_OUT_OF_RANGE)
+		} else if (cmd.resp[0] & R5_OUT_OF_RANGE) {
+			pr_err("%s() R5_OUT_OF_RANGE, resp 0x%08x\n",
+			       __func__, cmd.resp[0]);
 			return -ERANGE;
+		}
 	}
 
 	if (out) {
@@ -126,8 +137,10 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 	WARN_ON(blksz == 0);
 
 	/* sanity check */
-	if (addr & ~0x1FFFF)
+	if (addr & ~0x1FFFF) {
+		pr_err("%s() sanity check failed, addr 0x%x\n", __func__, addr);
 		return -EINVAL;
+	}
 
 	mrq.cmd = &cmd;
 	mrq.data = &data;
@@ -151,8 +164,10 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 	left_size = data.blksz * data.blocks;
 	nents = DIV_ROUND_UP(left_size, seg_size);
 	if (nents > 1) {
-		if (sg_alloc_table(&sgtable, nents, GFP_KERNEL))
+		if (sg_alloc_table(&sgtable, nents, GFP_KERNEL)) {
+			pr_err("%s() sg alloc table failed\n", __func__);
 			return -ENOMEM;
+		}
 
 		data.sg = sgtable.sgl;
 		data.sg_len = nents;
@@ -175,21 +190,30 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 
 	mmc_wait_for_req(card->host, &mrq);
 
-	if (cmd.error)
+	if (cmd.error) {
+		pr_err("%s() cmd.error %d\n", __func__, cmd.error);
 		err = cmd.error;
-	else if (data.error)
+	} else if (data.error) {
+		pr_err("%s() data.error %d\n", __func__, data.error);
 		err = data.error;
-	else if (mmc_host_is_spi(card->host))
+	} else if (mmc_host_is_spi(card->host)) {
 		/* host driver already reported errors */
 		err = 0;
-	else if (cmd.resp[0] & R5_ERROR)
+	} else if (cmd.resp[0] & R5_ERROR) {
+		pr_err("%s() R5 error, resp 0x%08x\n",
+		       __func__, cmd.resp[0]);
 		err = -EIO;
-	else if (cmd.resp[0] & R5_FUNCTION_NUMBER)
+	} else if (cmd.resp[0] & R5_FUNCTION_NUMBER) {
+		pr_err("%s() R5 function number, resp 0x%08x\n",
+		       __func__, cmd.resp[0]);
 		err = -EINVAL;
-	else if (cmd.resp[0] & R5_OUT_OF_RANGE)
+	} else if (cmd.resp[0] & R5_OUT_OF_RANGE) {
+		pr_err("%s() R5 out of range, resp 0x%08x\n",
+		       __func__, cmd.resp[0]);
 		err = -ERANGE;
-	else
+	} else {
 		err = 0;
+	}
 
 	mmc_post_req(card->host, &mrq, err);
 

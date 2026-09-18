@@ -12,8 +12,13 @@
 #include "core.h"
 #include "fwil_types.h"
 #include "p2p.h"
+#include "pno.h"
+
 
 #define	DOT11_MGMT_HDR_LEN		24	/* d11 management header len */
+
+/* Max length of Interworking element */
+#define BRCMF_IW_IES_MAX_BUF_LEN	8
 
 #define BRCMF_SCAN_IE_LEN_MAX		2048
 
@@ -94,6 +99,81 @@
 
 #define BRCMF_VIF_EVENT_TIMEOUT		msecs_to_jiffies(1500)
 
+#define BRCMF_PM_WAIT_MAXRETRY			100
+
+/* cfg80211 wowlan definitions */
+#define WL_WOWLAN_MAX_PATTERNS			8
+#define WL_WOWLAN_MIN_PATTERN_LEN		1
+#define WL_WOWLAN_MAX_PATTERN_LEN		255
+#define WL_WOWLAN_PKT_FILTER_ID_FIRST	201
+#define WL_WOWLAN_PKT_FILTER_ID_LAST	(WL_WOWLAN_PKT_FILTER_ID_FIRST + \
+					WL_WOWLAN_MAX_PATTERNS - 1)
+
+#define WL_RSPEC_ENCODE_HE	     0x03000000 /* HE MCS and Nss is stored in RSPEC_RATE_MASK */
+#define WL_RSPEC_HE_NSS_UNSPECIFIED	0xF
+#define WL_RSPEC_HE_NSS_SHIFT	     4               /* HE Nss value shift */
+#define WL_RSPEC_HE_GI_MASK	     0x00000C00      /* HE GI indices */
+#define WL_RSPEC_HE_GI_SHIFT	     10
+#define HE_GI_TO_RSPEC(gi)	     (((gi) << WL_RSPEC_HE_GI_SHIFT) & WL_RSPEC_HE_GI_MASK)
+
+#define IEEE80211_PUB_AF_CATEGORY	0x04
+#define IEEE80211_PUB_AF_ACTION		0x09
+/* Action Frame Constants */
+#define DOT11_ACTION_HDR_LEN	2	/* action frame category + action */
+#define DOT11_ACTION_CAT_OFF	0	/* category offset */
+#define DOT11_ACTION_ACT_OFF	1	/* action offset */
+
+/* GAS ACTION IDs*/
+#define IEEE80211_SD_ACTION_ID_GAS_IREQ		0x0a	/* GAS Initial Request AF */
+#define IEEE80211_SD_ACTION_ID_GAS_IRESP	0x0b	/* GAS Initial Response AF */
+#define IEEE80211_SD_ACTION_ID_GAS_CREQ		0x0c	/* GAS Comeback Request AF */
+#define IEEE80211_SD_ACTION_ID_GAS_CRESP	0x0d	/* GAS Comeback Response AF */
+
+#define COMMON_ACTION_FRM_DWELL_TIME		200
+#define COMMON_ACTION_FRM_MIN_DWELL_TIME	100
+#define COMMON_ACTION_FRM_MED_DWELL_TIME	400
+#define COMMON_ACTION_FRM_LONG_DWELL_TIME	1000
+#define COMMON_ACTION_FRM_TX_MAX_RETRY		5
+#define COMMON_ACTION_FRM_MAX_WAIT_TIME		msecs_to_jiffies(2000)
+
+#define MGMT_AUTH_FRAME_DWELL_TIME	4000
+#define MGMT_AUTH_FRAME_WAIT_TIME	(MGMT_AUTH_FRAME_DWELL_TIME + 100)
+/**
+ * struct brcmf_p2psd_gas_pub_act_frame - Wi-Fi GAS Public Action Frame
+ *
+ * @category: 0x04 Public Action Frame
+ * @action: 0x6c Advertisement Protocol
+ * @dialog_token: nonzero, identifies req/rsp transaction
+ * @query_data: Query Data. SD gas ireq SD gas iresp
+ */
+struct brcmf_sd_gas_pub_act_frame {
+	u8	category;
+	u8	action;
+	u8	dialog_token;
+	u8	query_data[];
+};
+
+/**
+ * struct brcmf_p2p_pub_act_frame - WiFi P2P Public Action Frame
+ *
+ * @category: P2P_PUB_AF_CATEGORY
+ * @action: P2P_PUB_AF_ACTION
+ * @oui: P2P_OUI
+ * @oui_type: OUI type - P2P_VER
+ * @subtype: OUI subtype - P2P_TYPE_*
+ * @dialog_token: nonzero, identifies req/rsp transaction
+ * @elts: Variable length information elements.
+ */
+struct brcmf_ieee80211_pub_act_frame {
+	u8	category;
+	u8	action;
+	u8	oui[3];
+	u8	oui_type;
+	u8	subtype;
+	u8	dialog_token;
+	u8	elts[];
+};
+
 /**
  * enum brcmf_scan_status - scan engine status
  *
@@ -127,7 +207,8 @@ enum brcmf_profile_fwsup {
 	BRCMF_PROFILE_FWSUP_NONE,
 	BRCMF_PROFILE_FWSUP_PSK,
 	BRCMF_PROFILE_FWSUP_1X,
-	BRCMF_PROFILE_FWSUP_SAE
+	BRCMF_PROFILE_FWSUP_SAE,
+	BRCMF_PROFILE_FWSUP_ROAM
 };
 
 /**
@@ -172,6 +253,7 @@ struct brcmf_cfg80211_profile {
 	enum brcmf_profile_fwsup use_fwsup;
 	u16 use_fwauth;
 	bool is_ft;
+	bool is_okc;
 };
 
 /**
@@ -193,6 +275,13 @@ enum brcmf_vif_status {
 	BRCMF_VIF_STATUS_AP_CREATED,
 	BRCMF_VIF_STATUS_EAP_SUCCESS,
 	BRCMF_VIF_STATUS_ASSOC_SUCCESS,
+};
+
+enum brcmf_cfg80211_pm_state {
+	BRCMF_CFG80211_PM_STATE_RESUMED,
+	BRCMF_CFG80211_PM_STATE_RESUMING,
+	BRCMF_CFG80211_PM_STATE_SUSPENDED,
+	BRCMF_CFG80211_PM_STATE_SUSPENDING,
 };
 
 /**
@@ -232,7 +321,6 @@ struct vif_saved_ie {
  * @mgmt_tx_status: status of last management frame sent to firmware.
  * @mgmt_tx_id:
  * @mgmt_rx_reg: registered rx mgmt frame types.
- * @mbss: Multiple BSS type, set if not first AP (not relevant for P2P).
  * @cqm_rssi_low: Lower RSSI limit for CQM monitoring
  * @cqm_rssi_high: Upper RSSI limit for CQM monitoring
  * @cqm_rssi_last: Last RSSI reading for CQM monitoring
@@ -248,7 +336,6 @@ struct brcmf_cfg80211_vif {
 	unsigned long mgmt_tx_status;
 	u32 mgmt_tx_id;
 	u16 mgmt_rx_reg;
-	bool mbss;
 	int is_11d;
 	s32 cqm_rssi_low;
 	s32 cqm_rssi_high;
@@ -267,6 +354,7 @@ struct brcmf_cfg80211_connect_info {
 struct brcmf_cfg80211_assoc_ielen_le {
 	__le32 req_len;
 	__le32 resp_len;
+	__le32 flags;
 };
 
 struct brcmf_cfg80211_edcf_acparam {
@@ -288,6 +376,11 @@ struct escan_info {
 	struct brcmf_if *ifp;
 	s32 (*run)(struct brcmf_cfg80211_info *cfg, struct brcmf_if *ifp,
 		   struct cfg80211_scan_request *request);
+};
+
+struct cqm_rssi_info {
+	bool enable;
+	s32 rssi_threshold;
 };
 
 /**
@@ -325,6 +418,23 @@ struct brcmf_cfg80211_wowl {
 	wait_queue_head_t nd_data_wait;
 	bool nd_data_completed;
 	bool nd_enabled;
+};
+
+struct network_blob {
+	char ssid[IEEE80211_MAX_SSID_LEN];
+	u8 ssid_len;
+	int key_mgmt;
+	char psk[WSEC_MAX_PASSWORD_LEN];
+	char sae_password[WSEC_MAX_PASSWORD_LEN];
+	u8 proto;
+	u8 pairwise_cipher;
+	u8 frequency;
+};
+
+struct drv_config_pfn_params {
+	u8 pfn_config;
+	u8 count;
+	struct network_blob *network_blob_data;
 };
 
 /**
@@ -386,6 +496,7 @@ struct brcmf_cfg80211_info {
 	struct escan_info escan_info;
 	struct timer_list escan_timeout;
 	struct work_struct escan_timeout_work;
+	struct cqm_rssi_info cqm_info;
 	struct list_head vif_list;
 	struct brcmf_cfg80211_vif_event vif_event;
 	struct completion vif_disabled;
@@ -394,6 +505,13 @@ struct brcmf_cfg80211_info {
 	struct brcmf_cfg80211_wowl wowl;
 	struct brcmf_pno_info *pno;
 	u8 ac_priority[MAX_8021D_PRIO];
+	u8 pm_state;
+	u8 num_softap;
+	u8 pfn_enable;
+	u8 pfn_connection;
+	bool bands_reset_required;
+	struct drv_config_pfn_params pfn_data;
+	u8 mchan_conf;
 };
 
 /**
@@ -407,6 +525,17 @@ struct brcmf_tlv {
 	u8 id;
 	u8 len;
 	u8 data[];
+};
+
+struct bcm_xtlv {
+	u16	id;
+	u16	len;
+	u8	data[1];
+};
+
+enum brcmf_pmksa_action {
+	PMKSA_SET = 0,
+	PMKSA_DELETE = 1
 };
 
 static inline struct wiphy *cfg_to_wiphy(struct brcmf_cfg80211_info *cfg)
@@ -459,6 +588,8 @@ brcmf_cfg80211_connect_info *cfg_to_conn(struct brcmf_cfg80211_info *cfg)
 	return &cfg->conn_info;
 }
 
+u8 nl80211_band_to_fwil(enum nl80211_band band);
+
 struct brcmf_cfg80211_info *brcmf_cfg80211_attach(struct brcmf_pub *drvr,
 						  struct cfg80211_ops *ops,
 						  bool p2pdev_forced);
@@ -494,5 +625,17 @@ void brcmf_cfg80211_free_netdev(struct net_device *ndev);
 int brcmf_set_wsec(struct brcmf_if *ifp, const u8 *key, u16 key_len, u16 flags);
 int brcmf_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			   struct cfg80211_mgmt_tx_params *params, u64 *cookie);
-
+void brcmf_cfg80211_update_proto_addr_mode(struct wireless_dev *wdev);
+void brcmf_cfg80211_link_down(struct brcmf_cfg80211_vif *vif, u16 reason,
+			    bool locally_generated);
+void brcmf_cfg80211_init_prof(struct brcmf_cfg80211_profile *prof);
+s32 brcmf_cfg80211_update_pmksa(struct brcmf_cfg80211_info *cfg,
+		   struct brcmf_if *ifp, const u8 *bssid, const u8 *pmkid,
+		   enum brcmf_pmksa_action action);
+int ifx_vndr_cmdstr_hashtbl_init(void);
+void ifx_vndr_cmdstr_hashtbl_deinit(void);
+s32 brcmf_cfg80211_inform_single_bss(struct brcmf_cfg80211_info *cfg,
+				   struct brcmf_bss_info_le *bi);
+void brcmf_cfg80211_delay(u32 ms);
+bool brcmf_ieee80211_is_gas_action(void *frame, u32 frame_len);
 #endif /* BRCMFMAC_CFG80211_H */

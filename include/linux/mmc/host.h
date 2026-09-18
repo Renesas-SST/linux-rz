@@ -272,6 +272,10 @@ struct mmc_host_ops {
 	 * negative errno in case of a failure or zero for success.
 	 */
 	int	(*uhs2_control)(struct mmc_host *host, enum sd_uhs2_operation op);
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	/* Gate clock output to SD/MMC bus */
+	void	(*bus_clock_gate)(struct mmc_host *host, bool enable);
+#endif
 };
 
 struct mmc_cqe_ops {

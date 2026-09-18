@@ -4,11 +4,15 @@
  */
 #include <linux/errno.h>
 #include <linux/types.h>
+#include <linux/string.h>
 #include <core.h>
 #include <bus.h>
 #include <fwvid.h>
 #include <fwil.h>
 #include <fweh.h>
+#include <common.h>
+#include <feature.h>
+#include <twt.h>
 
 #include "vops.h"
 #include "fwil_types.h"
@@ -18,10 +22,8 @@
 #define BRCMF_CYW_E_EXT_AUTH_FRAME_RX	188
 #define BRCMF_CYW_E_MGMT_FRAME_TXS	189
 #define BRCMF_CYW_E_MGMT_FRAME_TXS_OC	190
+#define BRCMF_CYW_E_RSSI		56
 #define BRCMF_CYW_E_LAST		197
-
-#define MGMT_AUTH_FRAME_DWELL_TIME	4000
-#define MGMT_AUTH_FRAME_WAIT_TIME	(MGMT_AUTH_FRAME_DWELL_TIME + 100)
 
 static int brcmf_cyw_set_sae_pwd(struct brcmf_if *ifp,
 				 struct cfg80211_crypto_settings *crypto)
@@ -41,7 +43,7 @@ static int brcmf_cyw_set_sae_pwd(struct brcmf_if *ifp,
 	memcpy(sae_pwd.key, crypto->sae_pwd, pwd_len);
 
 	err = brcmf_fil_iovar_data_set(ifp, "sae_password", &sae_pwd,
-				       sizeof(sae_pwd));
+				       sizeof(sae_pwd), NULL);
 	if (err < 0)
 		bphy_err(drvr, "failed to set SAE password in firmware (len=%u)\n",
 			 pwd_len);
@@ -58,8 +60,9 @@ static const struct brcmf_fweh_event_map brcmf_cyw_event_map = {
 			BRCMF_E_MGMT_FRAME_OFFCHAN_DONE,
 			BRCMF_CYW_E_MGMT_FRAME_TXS_OC
 		},
+		{ BRCMF_E_RSSI, BRCMF_CYW_E_RSSI },
 	},
-	.n_items = 4
+	.n_items = 5
 };
 
 static int brcmf_cyw_alloc_fweh_info(struct brcmf_pub *drvr)
@@ -94,7 +97,7 @@ static int brcmf_cyw_activate_events(struct brcmf_if *ifp)
 	memcpy(eventmask_msg->mask, fweh->event_mask, fweh->event_mask_len);
 
 	err = brcmf_fil_iovar_data_set(ifp, "event_msgs_ext", eventmask_msg,
-				       msglen);
+				       msglen, NULL);
 	kfree(eventmask_msg);
 	return err;
 }
@@ -156,6 +159,7 @@ int brcmf_cyw_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	memcpy(&mf_params->da[0], &mgmt->da[0], ETH_ALEN);
 	memcpy(&mf_params->bssid[0], &mgmt->bssid[0], ETH_ALEN);
+	*cookie = (u64)(uintptr_t)mf_params->data;
 	mf_params->packet_id = cpu_to_le32(*cookie);
 	memcpy(mf_params->data, &buf[DOT11_MGMT_HDR_LEN],
 	       le16_to_cpu(mf_params->len));
@@ -203,6 +207,7 @@ brcmf_cyw_external_auth(struct wiphy *wiphy, struct net_device *dev,
 	struct brcmf_pub *drvr;
 	struct brcmf_auth_req_status_le auth_status;
 	int ret = 0;
+	struct brcmf_cfg80211_info *cfg = wiphy_to_cfg(wiphy);
 
 	brcmf_dbg(TRACE, "Enter\n");
 
@@ -222,11 +227,27 @@ brcmf_cyw_external_auth(struct wiphy *wiphy, struct net_device *dev,
 	auth_status.ssid_len = cpu_to_le32(params->ssid.ssid_len);
 	memcpy(auth_status.ssid, params->ssid.ssid, params->ssid.ssid_len);
 
+	memset(auth_status.pmkid, 0, WLAN_PMKID_LEN);
+	if (params->pmkid)
+		memcpy(auth_status.pmkid, params->pmkid, WLAN_PMKID_LEN);
+
 	ret = brcmf_fil_iovar_data_set(ifp, "auth_status", &auth_status,
-				       sizeof(auth_status));
+				       sizeof(auth_status), NULL);
 	if (ret < 0)
 		bphy_err(drvr, "auth_status iovar failed: ret=%d\n", ret);
 
+	if (params->pmkid) {
+		ret = brcmf_cfg80211_update_pmksa(cfg,
+					 ifp,
+					 params->bssid,
+					 params->pmkid,
+					 PMKSA_SET);
+		if (ret < 0) {
+			bphy_err(drvr,
+				 "PMKSA_SET brcmf_update_pmksa failed: ret=%d\n",
+				 ret);
+		}
+	}
 	return ret;
 }
 
@@ -245,23 +266,65 @@ brcmf_cyw_notify_ext_auth_req(struct brcmf_if *ifp,
 	struct brcmf_auth_req_status_le *auth_req =
 		(struct brcmf_auth_req_status_le *)data;
 	s32 err = 0;
+	struct brcmf_auth_req_status_info_le_v2 *auth_req_v2 = NULL;
+	struct brcmf_bss_info_le *bi = NULL;
+	struct brcmf_cfg80211_info *cfg = drvr->config;
+
 
 	brcmf_dbg(INFO, "Enter: event %s (%d) received\n",
 		  brcmf_fweh_event_name(e->event_code), e->event_code);
 
-	if (e->datalen < sizeof(*auth_req)) {
-		bphy_err(drvr, "Event %s (%d) data too small. Ignore\n",
-			 brcmf_fweh_event_name(e->event_code), e->event_code);
-		return -EINVAL;
+	if (drvr->wlc_ver.wlc_ver_major > BRCMF_AUTH_STATUS_V2_FW_MAJOR ||
+	    (drvr->wlc_ver.wlc_ver_major == BRCMF_AUTH_STATUS_V2_FW_MAJOR &&
+	    drvr->wlc_ver.wlc_ver_minor >= BRCMF_AUTH_STATUS_V2_FW_MINOR)) {
+		auth_req_v2 = (struct brcmf_auth_req_status_info_le_v2 *)data;
+		if (e->datalen < sizeof(*auth_req_v2)) {
+			bphy_err(drvr, "Ext auth req event data too small. Ignoring event\n");
+			return -EINVAL;
+		}
+		/* Inform bss info to cfg80211 layer as during roaming
+		 * Supplicant might not have scan results,if scan results
+		 * are not found the SAE auth uses HNP by default and
+		 * Target AP will reject the connection.
+		 */
+		if (e->datalen > sizeof(*auth_req_v2)) {
+			bi = (struct brcmf_bss_info_le *)&auth_req_v2->bss_info_le;
+			if (bi) {
+				err = brcmf_cfg80211_inform_single_bss(cfg, bi);
+				if (err) {
+					bphy_err(drvr, "failed to update bss info, err=%d\n", err);
+					return err;
+				}
+			} else {
+				bphy_err(drvr, "External Auth request bss info is null\n");
+				return -EINVAL;
+			}
+		}
+		/* 10 ms delay to update results in cfg80211 */
+		brcmf_cfg80211_delay(10);
+		memset(&params, 0, sizeof(params));
+		params.action = NL80211_EXTERNAL_AUTH_START;
+		params.key_mgmt_suite = ntohl(WLAN_AKM_SUITE_SAE);
+		params.status = WLAN_STATUS_SUCCESS;
+		params.ssid.ssid_len = min_t(u32, IEEE80211_MAX_SSID_LEN, auth_req_v2->ssid_len);
+		memcpy(params.ssid.ssid, auth_req_v2->ssid, params.ssid.ssid_len);
+		memcpy(params.bssid, auth_req_v2->peer_mac, ETH_ALEN);
+	} else {
+		if (e->datalen < sizeof(*auth_req)) {
+			bphy_err(drvr, "Event %s (%d) data too small. Ignore\n",
+				 brcmf_fweh_event_name(e->event_code), e->event_code);
+			return -EINVAL;
+		}
+
+		memset(&params, 0, sizeof(params));
+		params.action = NL80211_EXTERNAL_AUTH_START;
+		params.key_mgmt_suite = ntohl(WLAN_AKM_SUITE_SAE);
+		params.status = WLAN_STATUS_SUCCESS;
+		params.ssid.ssid_len = min_t(u32, 32, le32_to_cpu(auth_req->ssid_len));
+		memcpy(params.ssid.ssid, auth_req->ssid, params.ssid.ssid_len);
+		memcpy(params.bssid, auth_req->peer_mac, ETH_ALEN);
 	}
 
-	memset(&params, 0, sizeof(params));
-	params.action = NL80211_EXTERNAL_AUTH_START;
-	params.key_mgmt_suite = WLAN_AKM_SUITE_SAE;
-	params.status = WLAN_STATUS_SUCCESS;
-	params.ssid.ssid_len = min_t(u32, 32, le32_to_cpu(auth_req->ssid_len));
-	memcpy(params.ssid.ssid, auth_req->ssid, params.ssid.ssid_len);
-	memcpy(params.bssid, auth_req->peer_mac, ETH_ALEN);
 
 	err = cfg80211_external_auth_request(ifp->ndev, &params, GFP_KERNEL);
 	if (err)
@@ -310,13 +373,12 @@ brcmf_notify_auth_frame_rx(struct brcmf_if *ifp,
 	brcmf_fil_cmd_data_get(ifp, BRCMF_C_GET_BSSID, mgmt_frame->bssid,
 			       ETH_ALEN);
 	frame += offsetof(struct ieee80211_mgmt, u);
-	memcpy(&mgmt_frame->u, frame,
-	       mgmt_frame_len - offsetof(struct ieee80211_mgmt, u));
+	unsafe_memcpy(&mgmt_frame->u, frame,
+	       mgmt_frame_len - offsetof(struct ieee80211_mgmt, u),
+		   /* alloc enough buf*/);
 
 	freq = ieee80211_channel_to_frequency(ch.control_ch_num,
-					      ch.band == BRCMU_CHAN_BAND_2G ?
-					      NL80211_BAND_2GHZ :
-					      NL80211_BAND_5GHZ);
+			BRCMU_CHAN_BAND_TO_NL80211(ch.band));
 
 	cfg80211_rx_mgmt(wdev, freq, 0, (u8 *)mgmt_frame, mgmt_frame_len,
 			 NL80211_RXMGMT_FLAG_EXTERNAL_AUTH);
@@ -352,6 +414,83 @@ brcmf_notify_mgmt_tx_status(struct brcmf_if *ifp,
 	return 0;
 }
 
+
+static s32
+brcmf_notify_rssi_change_ind(struct brcmf_if *ifp,
+			     const struct brcmf_event_msg *e, void *data)
+{
+
+	struct brcmf_cfg80211_info *cfg = ifp->drvr->config;
+	struct wl_event_data_rssi *value = (struct wl_event_data_rssi *)data;
+	s32 rssi = 0;
+
+	brcmf_dbg(INFO, "Enter: event %s (%d), status=%d\n",
+		  brcmf_fweh_event_name(e->event_code), e->event_code,
+		  e->status);
+
+	if (!cfg->cqm_info.enable)
+		return 0;
+
+	rssi = ntohl(value->rssi);
+	brcmf_dbg(TRACE, "rssi: %d, threshold: %d, send event(%s)\n",
+		  rssi, cfg->cqm_info.rssi_threshold,
+		  rssi > cfg->cqm_info.rssi_threshold ? "HIGH" : "LOW");
+
+	cfg80211_cqm_rssi_notify(ifp->ndev,
+				 (rssi > cfg->cqm_info.rssi_threshold ?
+					NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH :
+					NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW),
+				 rssi, GFP_KERNEL);
+	return 0;
+}
+
+static s32
+brcmf_notify_beacon_loss(struct brcmf_if *ifp,
+			 const struct brcmf_event_msg *e, void *data)
+{
+	struct brcmf_cfg80211_info *cfg = ifp->drvr->config;
+	struct brcmf_cfg80211_profile *profile = &ifp->vif->profile;
+	struct cfg80211_bss *bss;
+	struct net_device *ndev = ifp->ndev;
+
+	brcmf_dbg(INFO, "Enter: event %s (%d), status=%d\n",
+		  brcmf_fweh_event_name(e->event_code), e->event_code,
+		  e->status);
+
+	switch (ifp->drvr->settings->roamoff) {
+	case BRCMF_ROAMOFF_EN_BCNLOST_MSG:
+		/* On beacon loss event, Supplicant triggers new scan request
+		 * with NL80211_SCAN_FLAG_FLUSH Flag set, but lost AP bss entry
+		 * still remained as it is held by cfg as associated. Unlinking this
+		 * current BSS from cfg cached bss list on beacon loss event here,
+		 * would allow supplicant to receive new scanned entries
+		 * without current bss and select new bss to trigger roam.
+		 */
+		bss = cfg80211_get_bss(cfg->wiphy, NULL, profile->bssid, 0, 0,
+				       IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
+		if (bss) {
+			cfg80211_unlink_bss(cfg->wiphy, bss);
+			cfg80211_put_bss(cfg->wiphy, bss);
+		}
+		cfg80211_cqm_beacon_loss_notify(cfg_to_ndev(cfg), GFP_KERNEL);
+		break;
+	case BRCMF_ROAMOFF_EN_DISCONNECT_EVT:
+		brcmf_cfg80211_link_down(ifp->vif,
+				WLAN_REASON_UNSPECIFIED,
+				true);
+		brcmf_cfg80211_init_prof(ndev_to_prof(ndev));
+		if (ndev != cfg_to_ndev(cfg))
+			complete(&cfg->vif_disabled);
+		brcmf_net_setcarrier(ifp, false);
+		break;
+	case BRCMF_ROAMOFF_DISABLE:
+		default:
+			break;
+		}
+
+	return 0;
+}
+
 static void brcmf_cyw_register_event_handlers(struct brcmf_pub *drvr)
 {
 	brcmf_fweh_register(drvr, BRCMF_E_EXT_AUTH_REQ,
@@ -362,6 +501,17 @@ static void brcmf_cyw_register_event_handlers(struct brcmf_pub *drvr)
 			    brcmf_notify_mgmt_tx_status);
 	brcmf_fweh_register(drvr, BRCMF_E_MGMT_FRAME_OFFCHAN_DONE,
 			    brcmf_notify_mgmt_tx_status);
+	brcmf_fweh_register(drvr, BRCMF_E_RSSI,
+			    brcmf_notify_rssi_change_ind);
+	brcmf_fweh_register(drvr, BRCMF_E_BCNLOST_MSG,
+			    brcmf_notify_beacon_loss);
+	if (brcmf_feat_is_enabled(brcmf_get_ifp(drvr, 0), BRCMF_FEAT_TWT)) {
+		brcmf_fweh_register(drvr, BRCMF_E_TWT_SETUP,
+				    brcmf_notify_twt_event);
+		brcmf_fweh_register(drvr, BRCMF_E_TWT_TEARDOWN,
+				    brcmf_notify_twt_event);
+	}
+
 }
 
 const struct brcmf_fwvid_ops brcmf_cyw_ops = {

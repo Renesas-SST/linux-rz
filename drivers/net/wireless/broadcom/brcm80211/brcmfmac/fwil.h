@@ -67,12 +67,14 @@
 #define BRCMF_C_GET_BANDLIST			140
 #define BRCMF_C_SET_SCB_TIMEOUT			158
 #define BRCMF_C_GET_ASSOCLIST			159
+#define BRCMF_C_GET_UP				162
 #define BRCMF_C_GET_PHYLIST			180
 #define BRCMF_C_SET_SCAN_CHANNEL_TIME		185
 #define BRCMF_C_SET_SCAN_UNASSOC_TIME		187
 #define BRCMF_C_SCB_DEAUTHENTICATE_FOR_REASON	201
 #define BRCMF_C_SET_ASSOC_PREFER		205
 #define BRCMF_C_GET_VALID_CHANNELS		217
+#define BRCMF_C_GET_FAKEFRAG                    218
 #define BRCMF_C_SET_FAKEFRAG			219
 #define BRCMF_C_GET_KEY_PRIMARY			235
 #define BRCMF_C_SET_KEY_PRIMARY			236
@@ -80,6 +82,9 @@
 #define BRCMF_C_GET_VAR				262
 #define BRCMF_C_SET_VAR				263
 #define BRCMF_C_SET_WSEC_PMK			268
+
+#define BRCMF_FW_BADARG				2
+#define BRCMF_FW_UNSUPPORTED			23
 
 s32 brcmf_fil_cmd_data_set(struct brcmf_if *ifp, u32 cmd, void *data, u32 len);
 s32 brcmf_fil_cmd_data_get(struct brcmf_if *ifp, u32 cmd, void *data, u32 len);
@@ -116,22 +121,22 @@ s32 brcmf_fil_cmd_int_query(struct brcmf_if *ifp, u32 cmd, u32 *data)
 }
 
 s32 brcmf_fil_iovar_data_set(struct brcmf_if *ifp, const char *name,
-			     const void *data, u32 len);
+			     const void *data, u32 len, int *fwret);
 s32 brcmf_fil_iovar_data_get(struct brcmf_if *ifp, const char *name, void *data,
-			     u32 len);
+			     u32 len, int *fwret);
 static inline
-s32 brcmf_fil_iovar_int_set(struct brcmf_if *ifp, const char *name, u32 data)
+s32 brcmf_fil_iovar_int_set(struct brcmf_if *ifp, const char *name, u32 data, int *fwret)
 {
 	__le32 data_le = cpu_to_le32(data);
 
-	return brcmf_fil_iovar_data_set(ifp, name, &data_le, sizeof(data_le));
+	return brcmf_fil_iovar_data_set(ifp, name, &data_le, sizeof(data_le), fwret);
 }
 static inline
-s32 brcmf_fil_iovar_int_get(struct brcmf_if *ifp, const char *name, u32 *data)
+s32 brcmf_fil_iovar_int_get(struct brcmf_if *ifp, const char *name, u32 *data, int *fwret)
 {
 	s32 err;
 
-	err = brcmf_fil_iovar_data_get(ifp, name, data, sizeof(*data));
+	err = brcmf_fil_iovar_data_get(ifp, name, data, sizeof(*data), fwret);
 	if (err == 0)
 		*data = le32_to_cpu(*(__le32 *)data);
 	return err;
@@ -142,7 +147,7 @@ s32 brcmf_fil_iovar_int_query(struct brcmf_if *ifp, const char *name, u32 *data)
 	__le32 *data_le = (__le32 *)data;
 
 	*data_le = cpu_to_le32(*data);
-	return brcmf_fil_iovar_int_get(ifp, name, data);
+	return brcmf_fil_iovar_int_get(ifp, name, data, NULL);
 }
 
 
@@ -180,7 +185,7 @@ s32 brcmf_fil_bsscfg_int_query(struct brcmf_if *ifp, const char *name, u32 *data
 s32 brcmf_fil_xtlv_data_set(struct brcmf_if *ifp, const char *name, u16 id,
 			    void *data, u32 len);
 s32 brcmf_fil_xtlv_data_get(struct brcmf_if *ifp, const char *name, u16 id,
-			    void *data, u32 len);
+			    void *data, u32 len, int *fwret);
 static inline
 s32 brcmf_fil_xtlv_int_set(struct brcmf_if *ifp, const char *name, u16 id,
 			   u32 data)
@@ -197,7 +202,7 @@ s32 brcmf_fil_xtlv_int_get(struct brcmf_if *ifp, const char *name, u16 id,
 	__le32 data_le = cpu_to_le32(*data);
 	s32 err;
 
-	err = brcmf_fil_xtlv_data_get(ifp, name, id, &data_le, sizeof(data_le));
+	err = brcmf_fil_xtlv_data_get(ifp, name, id, &data_le, sizeof(data_le), NULL);
 	if (err == 0)
 		*data = le32_to_cpu(data_le);
 	return err;
@@ -206,7 +211,7 @@ static inline
 s32 brcmf_fil_xtlv_int8_get(struct brcmf_if *ifp, const char *name, u16 id,
 			    u8 *data)
 {
-	return brcmf_fil_xtlv_data_get(ifp, name, id, data, sizeof(*data));
+	return brcmf_fil_xtlv_data_get(ifp, name, id, data, sizeof(*data), NULL);
 }
 static inline
 s32 brcmf_fil_xtlv_int16_get(struct brcmf_if *ifp, const char *name, u16 id,
@@ -215,7 +220,7 @@ s32 brcmf_fil_xtlv_int16_get(struct brcmf_if *ifp, const char *name, u16 id,
 	__le16 data_le = cpu_to_le16(*data);
 	s32 err;
 
-	err = brcmf_fil_xtlv_data_get(ifp, name, id, &data_le, sizeof(data_le));
+	err = brcmf_fil_xtlv_data_get(ifp, name, id, &data_le, sizeof(data_le), NULL);
 	if (err == 0)
 		*data = le16_to_cpu(data_le);
 	return err;

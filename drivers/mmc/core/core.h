@@ -90,6 +90,10 @@ int mmc_attach_sd_uhs2(struct mmc_host *host);
 
 /* Module parameters */
 extern bool use_spi_crc;
+extern bool disable_uhs_mode;
+extern bool enable_clk_gate;
+extern unsigned int sd_clk_div;
+extern unsigned int sd_uhsimode;
 
 /* Debugfs information for hosts and cards */
 #ifdef CONFIG_DEBUG_FS

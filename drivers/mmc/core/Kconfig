@@ -91,3 +91,13 @@ config MMC_CRYPTO
 	  Enabling this makes it possible for the kernel to use the crypto
 	  capabilities of the MMC device (if present) to perform crypto
 	  operations on data being transferred to/from the device.
+
+config MMC_BUS_CLOCK_GATE
+	bool "SD/MMC bus clock gated support"
+	default n
+	help
+	  Stopping SD/MMC bus clock when bus is idling can lower the
+	  power consumption of the system. This function enables client
+	  (card) driver to request stopping bus clock.
+
+	  If unsure, say N here.

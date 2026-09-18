@@ -105,12 +105,16 @@ static int sdio_init_func(struct mmc_card *card, unsigned int fn)
 	int ret;
 	struct sdio_func *func;
 
-	if (WARN_ON(fn > SDIO_MAX_FUNCS))
+	if (WARN_ON(fn > SDIO_MAX_FUNCS)) {
+		pr_err("%s() invalid function number %d\n", __func__, fn);
 		return -EINVAL;
+	}
 
 	func = sdio_alloc_func(card);
-	if (IS_ERR(func))
+	if (IS_ERR(func)) {
+		pr_err("%s() alloc function failed %d\n", __func__, IS_ERR(func));
 		return PTR_ERR(func);
+	}
 
 	func->num = fn;
 
@@ -199,20 +203,47 @@ static int sdio_read_cccr(struct mmc_card *card, u32 ocr)
 				goto out;
 
 			if (mmc_host_can_uhs(card->host)) {
-				if (data & SDIO_UHS_DDR50)
-					card->sw_caps.sd3_bus_mode
-						|= SD_MODE_UHS_DDR50 | SD_MODE_UHS_SDR50
-							| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+				if (sd_uhsimode) {
+					if(sd_uhsimode & SD_MODE_UHS_SDR12)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_SDR25)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_DDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_DDR50 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_SDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR25
+								| SD_MODE_UHS_SDR12;
+					if(sd_uhsimode & SD_MODE_UHS_SDR104)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+				} else {
+					if (data & SDIO_UHS_DDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_DDR50 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
 
-				if (data & SDIO_UHS_SDR50)
-					card->sw_caps.sd3_bus_mode
-						|= SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR25
-							| SD_MODE_UHS_SDR12;
+					if (data & SDIO_UHS_SDR50)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR25
+								| SD_MODE_UHS_SDR12;
 
-				if (data & SDIO_UHS_SDR104)
-					card->sw_caps.sd3_bus_mode
-						|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
-							| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+					if (data & SDIO_UHS_SDR104)
+						card->sw_caps.sd3_bus_mode
+							|= SD_MODE_UHS_SDR104 | SD_MODE_UHS_SDR50
+								| SD_MODE_UHS_SDR25 | SD_MODE_UHS_SDR12;
+
+					if (sd_clk_div) {
+						pr_err("sd_clk_div not supported in UHS mode.\n");
+						pr_err("Current sd3_bus_mode: 0x%x\n",
+							card->sw_caps.sd3_bus_mode);
+					}
+				}
 			}
 
 			ret = mmc_io_rw_direct(card, 0, 0,
@@ -288,6 +319,37 @@ static int sdio_enable_wide(struct mmc_card *card)
 	return 1;
 }
 
+static int sdio_enable_asyn_int(struct mmc_card *card)
+{
+	int ret;
+	u8 ctrl;
+
+	if (!(card->host->caps & MMC_CAP_4_BIT_DATA))
+		return 0;
+
+	if (card->cccr.low_speed && !card->cccr.wide_bus)
+		return 0;
+
+	ret = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_IF, 0, &ctrl);
+	if (ret)
+		return ret;
+
+	ctrl &= SDIO_BUS_WIDTH_MASK;
+	if (ctrl != SDIO_BUS_WIDTH_4BIT)
+		return 0;
+
+	ret = mmc_io_rw_direct(card, 0, 0,
+				SDIO_CCCR_INTERRUPT_EXT, 0, &ctrl);
+	if (ret)
+		return ret;
+	ctrl |= SDIO_INTERRUPT_EXT_EAI;
+	ret = mmc_io_rw_direct(card, 1, 0,
+				SDIO_CCCR_INTERRUPT_EXT, ctrl, NULL);
+	if (ret)
+		return ret;
+
+	return 0;
+}
 /*
  * If desired, disconnect the pull-up resistor on CD/DAT[3] (pin 1)
  * of the card. This may be required on certain setups of boards,
@@ -334,7 +396,6 @@ static int sdio_disable_wide(struct mmc_card *card)
 		return 0;
 
 	ctrl &= ~SDIO_BUS_WIDTH_4BIT;
-	ctrl |= SDIO_BUS_ASYNC_INT;
 
 	ret = mmc_io_rw_direct(card, 1, 0, SDIO_CCCR_IF, ctrl, NULL);
 	if (ret)
@@ -602,6 +663,13 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 	if (err)
 		goto out;
 
+	/* Enable asynchronous interrupt for the card */
+	if (enable_clk_gate) {
+		err = sdio_enable_asyn_int(card);
+		if (err)
+			goto out;
+	}
+
 	/* Set the driver strength for the card */
 	sdio_select_driver_type(card);
 
@@ -669,7 +737,7 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 	WARN_ON(!host->claimed);
 
 	/* to query card if 1.8V signalling is supported */
-	if (mmc_host_can_uhs(host))
+	if (mmc_host_can_uhs(host) && !disable_uhs_mode)
 		ocr |= R4_18V_PRESENT;
 
 try_again:
@@ -870,6 +938,7 @@ try_again:
 		if (err)
 			goto remove;
 	} else {
+		unsigned int clk_rate;
 		/*
 		 * Switch to high-speed (if supported).
 		 */
@@ -882,7 +951,21 @@ try_again:
 		/*
 		 * Change to the card's maximum speed.
 		 */
-		mmc_set_clock(host, mmc_sdio_get_max_clock(card));
+		if (sd_clk_div > 255) {
+			pr_err("Invalid sd_clk_div value: %d\n", sd_clk_div);
+			goto remove;
+		}
+
+		if (sd_clk_div) {
+			clk_rate =  mmc_sdio_get_max_clock(card)/sd_clk_div;
+			pr_err("clk_div = %d, sd clock rate : %d Hz\n",
+			sd_clk_div, clk_rate);
+		} else {
+			clk_rate = mmc_sdio_get_max_clock(card);
+			pr_err("sd clock rate : %d Hz\n", clk_rate);
+		}
+
+		mmc_set_clock(host, clk_rate);
 
 		/*
 		 * Switch to wider bus (if supported).

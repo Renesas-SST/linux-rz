@@ -60,6 +60,33 @@ static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
 bool use_spi_crc = 1;
 module_param(use_spi_crc, bool, 0);
 
+/* Set disable_uhs_mode=1 to disable ultra high speed mode */
+bool disable_uhs_mode = 0;
+module_param(disable_uhs_mode, bool, 0);
+
+/* Set enable_clk_gate=1 to enable SD clk gate feature */
+bool enable_clk_gate = 0;
+module_param(enable_clk_gate, bool, 0);
+
+/*
+ * Set sd_clk_div to fix sd clock rate
+ * sd_clk_dev is the SD clock divisor value.
+ * Only support in HS mode. sd_clk_div must be a power of 2 and < 256
+ */
+unsigned int sd_clk_div;
+module_param(sd_clk_div, uint, 0444);
+
+/* Set ultra high speed data mode
+ * Data mode value refers from include/linux/mmc/card.h
+ * SD_MODE_UHS_SDR12	1
+ * SD_MODE_UHS_SDR25	2
+ * SD_MODE_UHS_SDR50	4
+ * SD_MODE_UHS_SDR104	8
+ * SD_MODE_UHS_DDR50	16
+*/
+unsigned int sd_uhsimode = 0;
+module_param(sd_uhsimode, uint, 0);
+
 static int mmc_schedule_delayed_work(struct delayed_work *work,
 				     unsigned long delay)
 {
@@ -216,12 +243,18 @@ static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 {
 	int err;
 
+	/* Tuning only for READ operation */
+	if (!mrq->cmd || (mrq->cmd->opcode != SD_IO_RW_DIRECT) ||
+	    !(mrq->cmd->arg & 0x80000000)) {
 	/* Assumes host controller has been runtime resumed by mmc_claim_host */
-	err = mmc_retune(host);
-	if (err) {
-		mrq->cmd->error = err;
-		mmc_request_done(host, mrq);
-		return;
+		err = mmc_retune(host);
+		if (err) {
+			pr_err("%s() %s: mmc retune failed, err %d\n",
+				__func__, mmc_hostname(host), err);
+			mrq->cmd->error = err;
+			mmc_request_done(host, mrq);
+			return;
+		}
 	}
 
 	/*
@@ -237,6 +270,8 @@ static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 			mmc_delay(1);
 
 		if (tries == 0) {
+			pr_err("%s() %s: card busy\n",
+				__func__, mmc_hostname(host));
 			mrq->cmd->error = -EBUSY;
 			mmc_request_done(host, mrq);
 			return;
@@ -342,16 +377,28 @@ int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 
 	mmc_retune_hold(host);
 
-	if (mmc_card_removed(host->card))
+	if (mmc_card_removed(host->card)) {
+		pr_err("%s() %s: card removed\n",
+			__func__, mmc_hostname(host));
 		return -ENOMEDIUM;
+	}
+
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	/* enable sd clk */
+	if (enable_clk_gate)
+		host->ops->bus_clock_gate(host, false);
+#endif
 
 	mmc_mrq_pr_debug(host, mrq, false);
 
 	WARN_ON(!host->claimed);
 
 	err = mmc_mrq_prep(host, mrq);
-	if (err)
+	if (err) {
+		pr_err("%s() %s: mrq prep failed, err %d\n",
+			__func__, mmc_hostname(host), err);
 		return err;
+	}
 
 	if (host->uhs2_sd_tran)
 		mmc_uhs2_prepare_cmd(host, mrq);
@@ -391,6 +438,8 @@ static int __mmc_start_req(struct mmc_host *host, struct mmc_request *mrq)
 
 	err = mmc_start_request(host, mrq);
 	if (err) {
+		pr_err("%s() %s: start request failed, err %d\n",
+			__func__, mmc_hostname(host), err);
 		mrq->cmd->error = err;
 		mmc_complete_cmd(mrq);
 		complete(&mrq->completion);
@@ -420,7 +469,11 @@ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq)
 		cmd->error = 0;
 		__mmc_start_request(host, mrq);
 	}
-
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	/*  stop sd clk */
+	if (enable_clk_gate)
+		host->ops->bus_clock_gate(host, true);
+#endif
 	mmc_retune_release(host);
 }
 EXPORT_SYMBOL(mmc_wait_for_req_done);

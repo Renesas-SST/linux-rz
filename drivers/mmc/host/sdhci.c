@@ -837,7 +837,14 @@ static void sdhci_adma_table_pre(struct sdhci_host *host,
 		}
 	} else {
 		/* Add a terminating entry - nop, end, valid */
-		__sdhci_adma_write_desc(host, &desc, 0, 0, ADMA2_NOP_END_VALID);
+		if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+			__sdhci_adma_write_desc(host, &desc, 0, 0,
+					ADMA2_END |
+					ADMA2_INT |
+					ADMA2_TRAN_VALID);
+		} else {
+			__sdhci_adma_write_desc(host, &desc, 0, 0, ADMA2_NOP_END_VALID);
+		}
 	}
 }
 
@@ -1115,8 +1122,10 @@ static inline void sdhci_set_block_info(struct sdhci_host *host,
 	}
 }
 
-void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_data *data)
+void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_command *cmd)
 {
+	struct mmc_data *data = cmd->data;
+
 	if (host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA)) {
 		struct scatterlist *sg;
 		unsigned int length_mask, offset_mask;
@@ -1169,6 +1178,12 @@ void sdhci_prepare_dma(struct sdhci_host *host, struct mmc_data *data)
 
 	sdhci_config_dma(host);
 
+	if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+		/* Use PIO for non-block transmission */
+		if (!(cmd->arg & 0x08000000))
+			host->flags &= ~SDHCI_REQ_USE_DMA;
+	}
+
 	if (host->flags & SDHCI_REQ_USE_DMA) {
 		int sg_cnt = sdhci_pre_dma_transfer(host, data, COOKIE_MAPPED);
 
@@ -1210,7 +1225,7 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 
 	sdhci_initialize_data(host, data);
 
-	sdhci_prepare_dma(host, data);
+	sdhci_prepare_dma(host, cmd);
 
 	sdhci_set_block_info(host, data);
 }
@@ -2377,6 +2392,37 @@ void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	bool turning_on_clk;
 	u8 ctrl;
 
+	/* 43012 WAR: To Support SD Clock to avoid back powering from
+	 *  HOST Controller
+	 */
+	u16 clk;
+
+	if (mmc->pm_caps & SDIO_IDLECLOCK_EN) {
+		/* Stop SD Clock  */
+		clk = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+		clk &= ~SDHCI_CLOCK_CARD_EN;
+		sdhci_writew(host, clk, SDHCI_CLOCK_CONTROL);
+		mmc->pm_caps &= ~SDIO_IDLECLOCK_EN;
+		return;
+	} else if (mmc->pm_caps & SDIO_IDLECLOCK_DIS) {
+		/* Start SD Clock  */
+		clk = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+		clk |= SDHCI_CLOCK_CARD_EN;
+		sdhci_writew(host, clk, SDHCI_CLOCK_CONTROL);
+		mmc->pm_caps &= ~SDIO_IDLECLOCK_DIS;
+		return;
+	} else if (mmc->pm_caps & SDIO_SDMODE_1BIT) {
+		/* Enable 1 bit bus mode  */
+		sdhci_set_bus_width(host, MMC_BUS_WIDTH_1);
+		mmc->pm_caps &= ~SDIO_SDMODE_1BIT;
+		return;
+	} else if (mmc->pm_caps & SDIO_SDMODE_4BIT) {
+		/* Enable 4 bit bus mode  */
+		sdhci_set_bus_width(host, MMC_BUS_WIDTH_4);
+		mmc->pm_caps &= ~SDIO_SDMODE_4BIT;
+		return;
+	}
+
 	host->reinit_uhs = false;
 
 	if (ios->power_mode == MMC_POWER_UNDEFINED)
@@ -2485,7 +2531,8 @@ void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 					mmc_hostname(mmc));
 				ctrl_2 |= SDHCI_CTRL_DRV_TYPE_B;
 			}
-
+			if (host->caps & SDHCI_CAN_ASYNC_INT)
+				ctrl_2 |= SDHCI_CTRL_ASYNC_INT_ENABLE;
 			sdhci_writew(host, ctrl_2, SDHCI_HOST_CONTROL2);
 			host->drv_type = ios->drv_type;
 		}
@@ -2863,7 +2910,7 @@ void sdhci_send_tuning(struct sdhci_host *host, u32 opcode)
 
 	/* Wait for Buffer Read Ready interrupt */
 	wait_event_timeout(host->buf_ready_int, (host->tuning_done == 1),
-			   msecs_to_jiffies(50));
+			   msecs_to_jiffies(500));
 
 }
 EXPORT_SYMBOL_GPL(sdhci_send_tuning);
@@ -3076,6 +3123,27 @@ static void sdhci_card_event(struct mmc_host *mmc)
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+void sdhci_sdclk_gate(struct mmc_host *mmc, bool enable)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+	u16 clk_ctrl;
+
+	if (host->ops->sd_clock_gate)
+		host->ops->sd_clock_gate(host, enable);
+	else if (host->sdclk_gated != enable) {
+		clk_ctrl = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+		if (enable)
+			clk_ctrl &= ~SDHCI_CLOCK_CARD_EN;
+		else
+			clk_ctrl |= SDHCI_CLOCK_CARD_EN;
+		sdhci_writew(host, clk_ctrl, SDHCI_CLOCK_CONTROL);
+		host->sdclk_gated = enable;
+	}
+}
+EXPORT_SYMBOL_GPL(sdhci_sdclk_gate);
+#endif
+
 static const struct mmc_host_ops sdhci_ops = {
 	.request	= sdhci_request,
 	.post_req	= sdhci_post_req,
@@ -3091,6 +3159,9 @@ static const struct mmc_host_ops sdhci_ops = {
 	.execute_tuning			= sdhci_execute_tuning,
 	.card_event			= sdhci_card_event,
 	.card_busy	= sdhci_card_busy,
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	.bus_clock_gate	= sdhci_sdclk_gate,
+#endif
 };
 
 /*****************************************************************************\
@@ -3430,6 +3501,8 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		 */
 		if (data_cmd && (data_cmd->flags & MMC_RSP_BUSY)) {
 			if (intmask & SDHCI_INT_DATA_TIMEOUT) {
+				pr_err("%s() %s: RSP busy and data timeout: 0x%08x\n",
+					__func__, mmc_hostname(host->mmc), intmask);
 				host->data_cmd = NULL;
 				data_cmd->error = -ETIMEDOUT;
 				sdhci_err_stats_inc(host, CMD_TIMEOUT);
@@ -3437,6 +3510,8 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 				return;
 			}
 			if (intmask & SDHCI_INT_DATA_END) {
+				pr_err("%s() %s: RSP busy and data end: 0x%08x\n",
+					__func__, mmc_hostname(host->mmc), intmask);
 				host->data_cmd = NULL;
 				/*
 				 * Some cards handle busy-end interrupt
@@ -3459,24 +3534,35 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		if (host->pending_reset)
 			return;
 
-		pr_err("%s: Got data interrupt 0x%08x even though no data operation was in progress.\n",
-		       mmc_hostname(host->mmc), (unsigned)intmask);
-		sdhci_err_stats_inc(host, UNEXPECTED_IRQ);
-		sdhci_dumpregs(host);
+		if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+			pr_debug("%s: Got data interrupt 0x%08x even though no data operation was in progress.\n",
+				 mmc_hostname(host->mmc), (unsigned)intmask);
+		} else {
+			pr_err("%s: Got data interrupt 0x%08x even though no data operation was in progress.\n",
+			       mmc_hostname(host->mmc), (unsigned)intmask);
+			sdhci_err_stats_inc(host, UNEXPECTED_IRQ);
+			sdhci_dumpregs(host);
+		}
 
 		return;
 	}
 
 	if (intmask & SDHCI_INT_DATA_TIMEOUT) {
+		pr_err("%s() %s: data timeout: 0x%08x\n",
+			__func__, mmc_hostname(host->mmc), intmask);
 		host->data->error = -ETIMEDOUT;
 		sdhci_err_stats_inc(host, DAT_TIMEOUT);
 	} else if (intmask & SDHCI_INT_DATA_END_BIT) {
+		pr_err("%s() %s: data end bit: 0x%08x\n",
+			__func__, mmc_hostname(host->mmc), intmask);
 		host->data->error = -EILSEQ;
 		if (!mmc_op_tuning(SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))))
 			sdhci_err_stats_inc(host, DAT_CRC);
 	} else if ((intmask & (SDHCI_INT_DATA_CRC | SDHCI_INT_TUNING_ERROR)) &&
 		SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))
 			!= MMC_BUS_TEST_R) {
+		pr_err("%s() %s: data crc: 0x%08x\n",
+			__func__, mmc_hostname(host->mmc), intmask);
 		host->data->error = -EILSEQ;
 		if (!mmc_op_tuning(SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))))
 			sdhci_err_stats_inc(host, DAT_CRC);
@@ -3561,13 +3647,22 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 	u32 intmask, mask, unexpected = 0;
 	int max_loops = 16;
 	int i;
-
 	spin_lock(&host->lock);
 
 	if (host->runtime_suspended) {
 		spin_unlock(&host->lock);
 		return IRQ_NONE;
 	}
+
+#ifdef CONFIG_MMC_BUS_CLOCK_GATE
+	if (host->sdclk_gated) {
+		u16 clk_ctrl = 0;
+		clk_ctrl = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+		clk_ctrl |= SDHCI_CLOCK_CARD_EN;
+		sdhci_writew(host, clk_ctrl, SDHCI_CLOCK_CONTROL);
+		host->sdclk_gated = false;
+	}
+#endif
 
 	intmask = sdhci_readl(host, SDHCI_INT_STATUS);
 	if (!intmask || intmask == 0xffffffff) {
@@ -4750,7 +4845,13 @@ int sdhci_setup_host(struct sdhci_host *host)
 	 * can do scatter/gather or not.
 	 */
 	if (host->flags & SDHCI_USE_ADMA) {
-		mmc->max_segs = SDHCI_MAX_SEGS;
+		if (host->quirks2 & SDHCI_QUIRK2_CY_FPGA_MULTIDESC_BROKEN) {
+			/* CY SDHC card does not support multi-descriptor */
+			mmc->max_segs = 1;
+		}
+		else {
+			mmc->max_segs = SDHCI_MAX_SEGS;
+		}
 	} else if (host->flags & SDHCI_USE_SDMA) {
 		mmc->max_segs = 1;
 		mmc->max_req_size = min_t(size_t, mmc->max_req_size,
