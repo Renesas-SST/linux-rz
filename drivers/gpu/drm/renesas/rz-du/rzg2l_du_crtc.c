@@ -8,7 +8,10 @@
  */
 
 #include <linux/clk.h>
+#include <linux/io.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 
@@ -26,6 +29,7 @@
 #include "rzg2l_du_encoder.h"
 #include "rzg2l_du_kms.h"
 #include "rzg2l_du_vsp.h"
+#include "rzg2l_mipi_dsi.h"
 
 #define DU_MCR0			0x00
 #define DU_MCR0_DPI_OE		BIT(0)
@@ -68,9 +72,135 @@ static void rzg2l_du_crtc_set_display_timing(struct rzg2l_du_crtc *rcrtc)
 	unsigned long mode_clock = mode->clock * 1000;
 	u32 ditr0, ditr1, ditr2, ditr3, ditr4, pbcr0;
 	struct rzg2l_du_device *rcdu = rcrtc->dev;
+	struct device_node *dsi_node;
+	struct platform_device *pdev_dsi;
 
-	clk_prepare_enable(rcrtc->rzg2l_clocks.dclk);
-	clk_set_rate(rcrtc->rzg2l_clocks.dclk, mode_clock);
+	dsi_node = of_find_node_by_name(NULL, "dsi");
+	pdev_dsi = dsi_node ? of_find_device_by_node(dsi_node) : NULL;
+
+	if (dsi_node && of_device_is_available(dsi_node) && pdev_dsi) {
+		/*
+		 * DSI path: the DU pixel clock alone is not enough — the
+		 * DSI PHY reference clock is derived from CPG PLL5, which
+		 * the current in-kernel clk framework does not program for
+		 * us. Program PLL5 = hs_clk * 16 where
+		 *   hs_clk = bpp * pix_clk / (8 * lanes)
+		 * so the DSI PHY can generate the correct HS byte clock
+		 * for this display mode. Matches the working rz-cmn-srp-3.2
+		 * behaviour that was lost in the 6.18 driver refactor.
+		 */
+		void __iomem *cpg_base = ioremap(0x11010000, 0x1000);
+		u32 i;
+		u32 parallel_out;
+		struct cpg_param param;
+		int lanes, bpp;
+		u32 pix_clk = mode->clock * 1000;
+		unsigned long long hs_clk;
+		unsigned long long pll5_clk;
+		unsigned long long divide_val;
+		u32 dsi_div;
+
+		if (!cpg_base) {
+			dev_err(rcdu->dev, "failed to map CPG for PLL5\n");
+			of_node_put(dsi_node);
+			return;
+		}
+
+		param.frequency = 0;
+		param.pl5_refdiv = 1;
+		param.pl5_divval = 0;
+		param.pl5_spread = 0x16;
+
+		lanes = rzg2l_mipi_dsi_get_data_lanes(pdev_dsi);
+		bpp = rzg2l_mipi_dsi_get_bpp(pdev_dsi);
+
+		parallel_out = 0;
+
+		param.pl5_postdiv1 = 1;
+		param.pl5_postdiv2 = 1;
+
+		hs_clk = ((long long)bpp * pix_clk) / (8 * lanes);
+		pll5_clk = hs_clk * 16;
+		if (pll5_clk > 1500000000) {
+			if (pll5_clk > 3000000000) {
+				dev_err(rcdu->dev, "Exceeded max frequency\n");
+				iounmap(cpg_base);
+				of_node_put(dsi_node);
+				return;
+			}
+			param.sel_pll5_4 = 0;	/* 3.0 GHz */
+		} else {
+			param.sel_pll5_4 = 1;	/* 1.5 GHz */
+		}
+
+		divide_val = pll5_clk * param.pl5_refdiv *
+			     param.pl5_postdiv1 * param.pl5_postdiv2;
+		param.pl5_intin = divide_val / OSCLK_HZ;
+
+		divide_val = divide_val % OSCLK_HZ;
+		divide_val = divide_val * 16 * 1024 * 1024;
+		divide_val = divide_val / OSCLK_HZ;
+		param.pl5_fracin = divide_val;
+
+		dsi_div = pll5_clk / pix_clk;
+		if (param.sel_pll5_4)
+			dsi_div /= 2;
+
+		for (i = 0; i < 4; i++) {
+			param.dsi_div_a = i;
+			param.dsi_div_b = (dsi_div / (1 << i)) - 1;
+			if (param.dsi_div_b > 16)
+				continue;
+			break;
+		}
+
+		if (i == 4) {
+			dev_err(rcdu->dev, "Cannot calculate frequency.\n");
+			iounmap(cpg_base);
+			of_node_put(dsi_node);
+			return;
+		}
+
+		/* CPG_PLL5_STBY: RESETB=0 */
+		reg_write(cpg_base + 0x0140, 0x00150000);
+
+		/* CPG_OTHERFUNC1_REG: SEL_PLL5_3 (1.5GHz or 3.0GHz) */
+		if (!parallel_out)
+			reg_write(cpg_base + 0xbe8, 0x10000 | param.sel_pll5_4);
+
+		/* CPG_PL2_DDIV: DIV_DSI_LPCLK */
+		reg_write(cpg_base + 0x0204, 0x10000000 |
+				(CPG_LPCLK_DIV << 12));
+		/* CPG_PL5_SDIV: DIV_DSI_A, DIV_DSI_B */
+		reg_write(cpg_base + 0x0420, 0x01010000 |
+				(param.dsi_div_a << 0) |
+				(param.dsi_div_b << 8));
+		/* CPG_PLL5_CLK1: POSTDIV1, POSTDIV2, REFDIV */
+		reg_write(cpg_base + 0x0144,
+				(param.pl5_postdiv1 << 0) |
+				(param.pl5_postdiv2 << 4) |
+				(param.pl5_refdiv << 8));
+		/* CPG_PLL5_CLK3: DIVVAL, FRACIN */
+		reg_write(cpg_base + 0x014C,
+				(param.pl5_divval << 0) |
+				(param.pl5_fracin << 8));
+		/* CPG_PLL5_CLK4: INTIN */
+		reg_write(cpg_base + 0x0150, 0x000000ff |
+				(param.pl5_intin << 16));
+		/* CPG_PLL5_CLK5: SPREAD */
+		reg_write(cpg_base + 0x0154,
+				(param.pl5_intin << 16));
+
+		/* CPG_PLL5_STBY: RESETB=1 */
+		reg_write(cpg_base + 0x0140, 0x00150001);
+
+		iounmap(cpg_base);
+		clk_prepare_enable(rcrtc->rzg2l_clocks.dclk);
+	} else {
+		clk_prepare_enable(rcrtc->rzg2l_clocks.dclk);
+		clk_set_rate(rcrtc->rzg2l_clocks.dclk, mode_clock);
+	}
+	of_node_put(dsi_node);
 
 	ditr0 = (DU_DITR0_DEMD_HIGH
 	      | ((mode->flags & DRM_MODE_FLAG_PVSYNC) ? DU_DITR0_VSPOL : 0)
