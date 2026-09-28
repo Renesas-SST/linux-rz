@@ -416,6 +416,9 @@ static int riic_init_hw(struct riic_dev *riic)
 	if (brl > (0x1F + 3))
 		return dev_err_probe(dev, -EINVAL, "invalid speed (%uHz). Too slow.\n",
 				     t->bus_freq_hz);
+
+	brh = total_ticks - brl;
+
 	if (cks == 0) {
 		brl -= 4;
 		brh -= 4;

@@ -62,6 +62,24 @@ struct rzg2l_du_crtc {
 	} rzg2l_clocks;
 };
 
+struct cpg_param {
+	u32	frequency;
+	u32	pl5_refdiv;
+	u32	pl5_intin;
+	u32	pl5_fracin;
+	u32	pl5_postdiv1;
+	u32	pl5_postdiv2;
+	u32	pl5_divval;
+	u32	pl5_spread;
+	u32	dsi_div_a;
+	u32	dsi_div_b;
+	u32	sel_pll5_4;
+};
+
+#define OSCLK_HZ		24000000
+#define reg_write(x, a)		iowrite32(a, x)
+#define CPG_LPCLK_DIV		0
+
 static inline struct rzg2l_du_crtc *to_rzg2l_crtc(struct drm_crtc *c)
 {
 	return container_of(c, struct rzg2l_du_crtc, crtc);
