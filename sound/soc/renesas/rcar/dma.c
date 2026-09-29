@@ -66,6 +66,74 @@ static struct rsnd_mod mem = {
 /*
  *		Audio DMAC
  */
+static void rsnd_dmaen_complete(void *data);
+
+/*
+ * RZ/V2H rz-dmac does not support cyclic transfers reliably (see
+ * rsnd_dmaen_start() below), so instead of a single cyclic descriptor
+ * we submit one period at a time and chain the next submission off the
+ * completion callback of the previous one, mirroring what the DMA
+ * engine itself would do for a cyclic transfer.
+ */
+static int rsnd_dmaen_transfer(struct rsnd_mod *mod,
+				struct rsnd_dai_stream *io)
+{
+	struct rsnd_dma *dma = rsnd_mod_to_dma(mod);
+	struct rsnd_dmaen *dmaen = rsnd_dma_to_dmaen(dma);
+	struct rsnd_priv *priv = rsnd_io_to_priv(io);
+	struct device *dev = rsnd_priv_to_dev(priv);
+	struct snd_pcm_runtime *runtime = io->substream->runtime;
+	struct dma_async_tx_descriptor *desc;
+	enum dma_transfer_direction dir;
+	unsigned int period_frames = runtime->period_size;
+	dma_addr_t dma_paddr;
+	size_t dma_size;
+
+	dir = rsnd_io_is_play(io) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
+
+	dma_paddr = runtime->dma_addr + frames_to_bytes(runtime, io->dma_buffer_pos);
+	dma_size = frames_to_bytes(runtime, period_frames);
+
+	desc = dmaengine_prep_slave_single(dmaen->chan, dma_paddr, dma_size, dir,
+					   DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+	if (!desc) {
+		dev_err(dev, "prep_slave_single failed\n");
+		return -EIO;
+	}
+
+	desc->callback		= rsnd_dmaen_complete;
+	desc->callback_param	= rsnd_mod_get(dma);
+
+	if (dmaengine_submit(desc) < 0) {
+		dev_err(dev, "submit failed\n");
+		return -EIO;
+	}
+
+	io->dma_buffer_pos += period_frames;
+	if (io->dma_buffer_pos >= runtime->buffer_size)
+		io->dma_buffer_pos = 0;
+
+	dma_async_issue_pending(dmaen->chan);
+
+	return 0;
+}
+
+static void __rsnd_dmaen_complete(struct rsnd_mod *mod,
+				  struct rsnd_dai_stream *io)
+{
+	if (rsnd_io_is_working(io)) {
+		snd_pcm_period_elapsed(io->substream);
+		rsnd_dmaen_transfer(mod, io);
+	}
+}
+
+static void rsnd_dmaen_complete(void *data)
+{
+	struct rsnd_mod *mod = data;
+
+	rsnd_mod_interrupt(mod, __rsnd_dmaen_complete);
+}
+
 static struct dma_chan *rsnd_dmaen_request_channel(struct rsnd_dai_stream *io,
 						   struct rsnd_mod *mod_from,
 						   struct rsnd_mod *mod_to)
@@ -148,8 +216,6 @@ static int rsnd_dmaen_start(struct rsnd_mod *mod,
 	struct device *dev = rsnd_priv_to_dev(priv);
 	struct dma_slave_config cfg = {};
 	enum dma_slave_buswidth buswidth = DMA_SLAVE_BUSWIDTH_4_BYTES;
-	struct snd_pcm_runtime *runtime;
-	enum dma_transfer_direction dir;
 	int ret, i;
 
 	/*
@@ -193,43 +259,23 @@ static int rsnd_dmaen_start(struct rsnd_mod *mod,
 
 	/*
 	 * RZ/V2H DMA (rz-dmac) does not support cyclic transfers reliably in this
-	 * configuration. Use single-shot transfers repeated 4 times to avoid stalls.
-	 * This is a temporary workaround until rz-dmac cyclic support is improved.
-	 *
-	 * Note: The number of iterations (4) is hardware-specific and derived from
-	 * testing on RZ/V2H platforms. Do not change without verification.
+	 * configuration. Use single-shot transfers instead, chained off the
+	 * completion callback in rsnd_dmaen_transfer()/rsnd_dmaen_complete() so the
+	 * stream keeps feeding itself (and ALSA keeps getting period-elapsed
+	 * notifications) for as long as it is running, not just for the first few
+	 * periods. This is a temporary workaround until rz-dmac cyclic support is
+	 * improved.
 	 *
 	 * Non-RZ/V2H platforms use standard cyclic DMA via pcm_dmaengine.
 	 */
 	if (rsnd_is_rzv2h(priv)) {
-		runtime = io->substream->runtime;
-		dir = rsnd_io_is_play(io) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
-		unsigned int period_frames = runtime->period_size;
-		dma_addr_t base_addr = runtime->dma_addr;
-
+		/* Pre-fill a few periods so the DMAC has a backlog before the
+		 * first completion callback fires and takes over resubmission.
+		 */
 		for (i = 0; i < 4; i++) {
-			struct dma_async_tx_descriptor *desc;
-			dma_addr_t dma_paddr = base_addr + frames_to_bytes(runtime, io->dma_buffer_pos);
-			size_t dma_size = frames_to_bytes(runtime, period_frames);
-
-			desc = dmaengine_prep_slave_single(dmaen->chan, dma_paddr, dma_size, dir,
-							   DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
-			if (!desc) {
-				dev_err(dev, "prep_slave_single failed\n");
-				return -EIO;
-			}
-
-			dma_cookie_t cookie = dmaengine_submit(desc);
-			if (cookie < 0) {
-				dev_err(dev, "submit failed\n");
-				return -EIO;
-			}
-
-			dma_async_issue_pending(dmaen->chan);
-
-			io->dma_buffer_pos += period_frames;
-			if (io->dma_buffer_pos >= runtime->buffer_size)
-				io->dma_buffer_pos = 0;
+			ret = rsnd_dmaen_transfer(mod, io);
+			if (ret < 0)
+				return ret;
 		}
 		return 0;
 	}
