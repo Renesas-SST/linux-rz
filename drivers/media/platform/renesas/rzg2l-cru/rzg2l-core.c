@@ -91,6 +91,8 @@ static int rzg2l_cru_group_notify_complete(struct v4l2_async_notifier *notifier)
 
 	cru->is_csi = true;
 
+	rzg2l_cru_init_format_from_source(cru);
+
 	return 0;
 }
 

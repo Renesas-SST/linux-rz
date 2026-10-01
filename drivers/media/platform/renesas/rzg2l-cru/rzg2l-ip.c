@@ -379,12 +379,39 @@ const struct rzg2l_cru_ip_format *rzg2l_cru_ip_format_to_fmt(u32 format)
 	return NULL;
 }
 
-const struct rzg2l_cru_ip_format *rzg2l_cru_ip_index_to_fmt(u32 index)
+/*
+ * rzg2l_cru_ip_formats[] has one entry per supported media-bus code, so the
+ * RAW10/RAW12/RAW14 pixel formats -- which accept 4 different Bayer-order
+ * mbus codes each -- appear 4 times with the same .format fourcc. Indexing
+ * directly into the table (as ENUM_FMT needs to) would report the same
+ * fourcc to userspace several times in a row. Walk the table counting only
+ * the first occurrence of each distinct fourcc.
+ */
+const struct rzg2l_cru_ip_format *rzg2l_cru_ip_unique_index_to_fmt(u32 index)
 {
-	if (index >= ARRAY_SIZE(rzg2l_cru_ip_formats))
-		return NULL;
+	u32 seen[ARRAY_SIZE(rzg2l_cru_ip_formats)];
+	unsigned int i, count = 0;
 
-	return &rzg2l_cru_ip_formats[index];
+	for (i = 0; i < ARRAY_SIZE(rzg2l_cru_ip_formats); i++) {
+		unsigned int j;
+		bool dup = false;
+
+		for (j = 0; j < count; j++) {
+			if (seen[j] == rzg2l_cru_ip_formats[i].format) {
+				dup = true;
+				break;
+			}
+		}
+		if (dup)
+			continue;
+
+		if (count == index)
+			return &rzg2l_cru_ip_formats[i];
+
+		seen[count++] = rzg2l_cru_ip_formats[i].format;
+	}
+
+	return NULL;
 }
 
 bool rzg2l_cru_ip_fmt_supports_mbus_code(const struct rzg2l_cru_ip_format *fmt,

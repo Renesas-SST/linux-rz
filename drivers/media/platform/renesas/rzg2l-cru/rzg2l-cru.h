@@ -255,6 +255,7 @@ void rzg2l_cru_dma_unregister(struct rzg2l_cru_dev *cru);
 
 int rzg2l_cru_video_register(struct rzg2l_cru_dev *cru);
 void rzg2l_cru_video_unregister(struct rzg2l_cru_dev *cru);
+void rzg2l_cru_init_format_from_source(struct rzg2l_cru_dev *cru);
 irqreturn_t rzg2l_cru_irq(int irq, void *data);
 irqreturn_t rzg3e_cru_irq(int irq, void *data);
 irqreturn_t rzv2h_cru_irq(int irq, void *data);
@@ -265,7 +266,7 @@ void rzg2l_cru_ip_subdev_unregister(struct rzg2l_cru_dev *cru);
 struct v4l2_mbus_framefmt *rzg2l_cru_ip_get_src_fmt(struct rzg2l_cru_dev *cru);
 const struct rzg2l_cru_ip_format *rzg2l_cru_ip_code_to_fmt(unsigned int code);
 const struct rzg2l_cru_ip_format *rzg2l_cru_ip_format_to_fmt(u32 format);
-const struct rzg2l_cru_ip_format *rzg2l_cru_ip_index_to_fmt(u32 index);
+const struct rzg2l_cru_ip_format *rzg2l_cru_ip_unique_index_to_fmt(u32 index);
 bool rzg2l_cru_ip_fmt_supports_mbus_code(const struct rzg2l_cru_ip_format *fmt,
 					 unsigned int code);
 
