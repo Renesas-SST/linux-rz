@@ -1558,7 +1558,7 @@ static int rzg2l_cru_enum_fmt_vid_cap(struct file *file, void *priv,
 {
 	const struct rzg2l_cru_ip_format *fmt;
 
-	fmt = rzg2l_cru_ip_index_to_fmt(f->index);
+	fmt = rzg2l_cru_ip_unique_index_to_fmt(f->index);
 	if (!fmt)
 		return -EINVAL;
 
@@ -1567,27 +1567,97 @@ static int rzg2l_cru_enum_fmt_vid_cap(struct file *file, void *priv,
 	return 0;
 }
 
+/*
+ * The CRU IP subdev (cru->ip.remote) is the CSI-2 receiver, which does not
+ * forward enum_frame_size to the physical sensor behind it (unlike
+ * get_frame_desc, which it does proxy) -- it only reports its own generic
+ * continuous hardware limits, regardless of what sensor is attached. Walk
+ * one more hop, from the CSI-2 receiver's sink pad, to reach the real
+ * source (the sensor) so frame sizes reported to userspace reflect what
+ * the attached sensor actually supports.
+ */
+static struct v4l2_subdev *rzg2l_cru_get_source_subdev(struct rzg2l_cru_dev *cru,
+							unsigned int *source_pad)
+{
+	struct media_pad *pad;
+
+	if (!cru->ip.remote)
+		return NULL;
+
+	/* Pad 0 on the CSI-2 receiver is always its sink (RZG2L_CSI2_SINK). */
+	pad = media_pad_remote_pad_unique(&cru->ip.remote->entity.pads[0]);
+	if (IS_ERR_OR_NULL(pad))
+		return NULL;
+
+	if (source_pad)
+		*source_pad = pad->index;
+
+	return media_entity_to_v4l2_subdev(pad->entity);
+}
+
+/*
+ * Seed cru->format with the real, active mode of the attached sensor as
+ * soon as the pipeline links exist, instead of leaving it at the
+ * compile-time 320x240 default until userspace issues an explicit S_FMT.
+ * Best-effort: on any failure just keep the existing (default) format.
+ */
+void rzg2l_cru_init_format_from_source(struct rzg2l_cru_dev *cru)
+{
+	struct v4l2_subdev_format fmt = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+	};
+	const struct rzg2l_cru_ip_format *video_fmt;
+	struct v4l2_subdev *source;
+	unsigned int source_pad;
+
+	source = rzg2l_cru_get_source_subdev(cru, &source_pad);
+	if (!source)
+		return;
+
+	fmt.pad = source_pad;
+	if (v4l2_subdev_call(source, pad, get_fmt, NULL, &fmt))
+		return;
+
+	video_fmt = rzg2l_cru_ip_code_to_fmt(fmt.format.code);
+	if (!video_fmt)
+		return;
+
+	cru->format.pixelformat = video_fmt->format;
+	cru->format.width = fmt.format.width;
+	cru->format.height = fmt.format.height;
+	rzg2l_cru_format_align(cru, &cru->format);
+}
+
 static int rzg2l_cru_enum_framesizes(struct file *file, void *fh,
 				     struct v4l2_frmsizeenum *fsize)
 {
 	struct rzg2l_cru_dev *cru = video_drvdata(file);
-	const struct rzg2l_cru_info *info = cru->info;
 	const struct rzg2l_cru_ip_format *fmt;
-
-	if (fsize->index)
-		return -EINVAL;
+	struct v4l2_subdev_frame_size_enum fse = {
+		.index	= fsize->index,
+		.which	= V4L2_SUBDEV_FORMAT_ACTIVE,
+	};
+	struct v4l2_subdev *source;
+	unsigned int source_pad;
+	int ret;
 
 	fmt = rzg2l_cru_ip_format_to_fmt(fsize->pixel_format);
 	if (!fmt)
 		return -EINVAL;
 
-	fsize->type = V4L2_FRMIVAL_TYPE_CONTINUOUS;
-	fsize->stepwise.min_width = RZG2L_CRU_MIN_INPUT_WIDTH;
-	fsize->stepwise.max_width = info->max_width;
-	fsize->stepwise.step_width = 1;
-	fsize->stepwise.min_height = RZG2L_CRU_MIN_INPUT_HEIGHT;
-	fsize->stepwise.max_height = info->max_height;
-	fsize->stepwise.step_height = 1;
+	source = rzg2l_cru_get_source_subdev(cru, &source_pad);
+	if (!source)
+		return -EINVAL;
+
+	fse.pad = source_pad;
+	fse.code = fmt->codes[0];
+	ret = v4l2_subdev_call(source, pad, enum_frame_size, NULL, &fse);
+	if (ret)
+		return ret == -ENOIOCTLCMD ? -EINVAL : ret;
+
+	fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+	fsize->discrete.width = fse.max_width;
+	fsize->discrete.height = fse.max_height;
 
 	return 0;
 }
