@@ -278,11 +278,6 @@ static void rz_dmac_lmdesc_recycle(struct rz_dmac_chan *channel)
 	channel->lmdesc.head = lmdesc;
 }
 
-/* CHSTAT bit 2 is TACT (transaction active); bit 8 is descriptor load. */
-#define RZ_DMAC_CHSTAT_TACT		BIT(2)
-#define RZ_DMAC_ENABLE_RETRY_US		200
-#define RZ_DMAC_ENABLE_RETRY_MAX	3
-
 static void rz_dmac_enable_hw(struct rz_dmac_chan *channel)
 {
 	struct dma_chan *chan = &channel->vc.chan;
@@ -291,7 +286,6 @@ static void rz_dmac_enable_hw(struct rz_dmac_chan *channel)
 	u32 nxla;
 	u32 chctrl;
 	u32 chstat;
-	int attempt;
 
 	dev_dbg(dmac->dev, "%s channel %d\n", __func__, channel->index);
 
@@ -305,29 +299,11 @@ static void rz_dmac_enable_hw(struct rz_dmac_chan *channel)
 
 	chstat = rz_dmac_ch_readl(channel, CHSTAT, 1);
 	if (!(chstat & CHSTAT_EN)) {
-		/*
-		 * CHCTRL_DEFAULT (used at channel alloc/reset time) includes
-		 * CHCTRL_CLRINTMSK, but this start-of-transfer write did not --
-		 * if the interrupt mask re-latches after a prior stop/idle
-		 * cycle (as most DMACs of this style do), every completion
-		 * IRQ for this transfer is silently swallowed even though the
-		 * channel reports itself active. Clear it explicitly on every
-		 * enable, not just once at channel allocation.
-		 */
-		chctrl = (channel->chctrl | CHCTRL_SETEN | CHCTRL_CLRINTMSK);
-
-		for (attempt = 1; attempt <= RZ_DMAC_ENABLE_RETRY_MAX; attempt++) {
-			rz_dmac_ch_writel(channel, nxla, NXLA, 1);
-			rz_dmac_ch_writel(channel, channel->chcfg, CHCFG, 1);
-			rz_dmac_ch_writel(channel, CHCTRL_SWRST, CHCTRL, 1);
-			rz_dmac_ch_writel(channel, chctrl, CHCTRL, 1);
-
-			if (!read_poll_timeout_atomic(rz_dmac_ch_readl, chstat,
-						      chstat & RZ_DMAC_CHSTAT_TACT,
-						      5, RZ_DMAC_ENABLE_RETRY_US, false,
-						      channel, CHSTAT, 1))
-				break;
-		}
+		chctrl = (channel->chctrl | CHCTRL_SETEN);
+		rz_dmac_ch_writel(channel, nxla, NXLA, 1);
+		rz_dmac_ch_writel(channel, channel->chcfg, CHCFG, 1);
+		rz_dmac_ch_writel(channel, CHCTRL_SWRST, CHCTRL, 1);
+		rz_dmac_ch_writel(channel, chctrl, CHCTRL, 1);
 	}
 
 	local_irq_restore(flags);
@@ -434,11 +410,11 @@ static void rz_dmac_prepare_descs_for_slave_sg(struct rz_dmac_chan *channel)
 	channel->lmdesc.tail = lmdesc;
 
 	if (dmac->has_icu) {
-		/* Keep the proven 3.2 RZ/V2H ICU programming sequence. */
+		/* Route both the DMA request and ack signals through the ICU. */
 		if (register_dmac_req_signal(dmac->icu.pdev,
 					     dmac->icu.dmac_index,
 					     channel->index, channel->dmac_req) < 0)
-			dev_info(dmac->dev, "%s: Register dmac req fail\\n", __func__);
+			dev_info(dmac->dev, "%s: Register dmac req fail\n", __func__);
 		if (register_dmac_ack_signal(dmac->icu.pdev,
 					     dmac->icu.dmac_index,
 					     channel->dmac_ack,
@@ -751,7 +727,7 @@ static void rz_dmac_device_synchronize(struct dma_chan *chan)
 		if (register_dmac_req_signal(dmac->icu.pdev,
 					     dmac->icu.dmac_index, channel->index,
 					     RZV2H_ICU_DMAC_REQ_NO_DEFAULT) < 0)
-			dev_info(dmac->dev, "%s: Unregister dmac req fail\\n", __func__);
+			dev_info(dmac->dev, "%s: Unregister dmac req fail\n", __func__);
 		if (register_dmac_ack_signal(dmac->icu.pdev,
 					     dmac->icu.dmac_index,
 					     channel->dmac_ack, 0x7F) < 0)
