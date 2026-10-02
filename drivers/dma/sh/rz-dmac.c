@@ -410,8 +410,16 @@ static void rz_dmac_prepare_descs_for_slave_sg(struct rz_dmac_chan *channel)
 	channel->lmdesc.tail = lmdesc;
 
 	if (dmac->has_icu) {
-		rzv2h_icu_register_dma_req(dmac->icu.pdev, dmac->icu.dmac_index,
-					   channel->index, channel->mid_rid);
+		/* Route both the DMA request and ack signals through the ICU. */
+		if (register_dmac_req_signal(dmac->icu.pdev,
+					     dmac->icu.dmac_index,
+					     channel->index, channel->dmac_req) < 0)
+			dev_info(dmac->dev, "%s: Register dmac req fail\n", __func__);
+		if (register_dmac_ack_signal(dmac->icu.pdev,
+					     dmac->icu.dmac_index,
+					     channel->dmac_ack,
+					     channel->index) < 0)
+			dev_info(dmac->dev, "%s: Register dmac ack fail\n", __func__);
 	} else if (dmac->devtype == RZ_V2H_DMAC) {
 		if (register_dmac_req_signal(dmac->icu_dev, dmac->dev->id,
 					channel->index, channel->dmac_req) < 0)
@@ -716,9 +724,14 @@ static void rz_dmac_device_synchronize(struct dma_chan *chan)
 		dev_warn(dmac->dev, "DMA Timeout");
 
 	if (dmac->has_icu) {
-		rzv2h_icu_register_dma_req(dmac->icu.pdev, dmac->icu.dmac_index,
-					   channel->index,
-					   RZV2H_ICU_DMAC_REQ_NO_DEFAULT);
+		if (register_dmac_req_signal(dmac->icu.pdev,
+					     dmac->icu.dmac_index, channel->index,
+					     RZV2H_ICU_DMAC_REQ_NO_DEFAULT) < 0)
+			dev_info(dmac->dev, "%s: Unregister dmac req fail\n", __func__);
+		if (register_dmac_ack_signal(dmac->icu.pdev,
+					     dmac->icu.dmac_index,
+					     channel->dmac_ack, 0x7F) < 0)
+			dev_info(dmac->dev, "%s: Unregister dmac ack fail\n", __func__);
 	} else if (dmac->devtype == RZ_V2H_DMAC) {
 		if (register_dmac_req_signal(dmac->icu_dev, dmac->dev->id,
 					channel->index, 0x3FF) < 0)
