@@ -33,6 +33,8 @@
 #define SYS_LSI_OTPTSU0TRMVAL1		0x324
 #define SYS_LSI_OTPTSU1TRMVAL0		0x330
 #define SYS_LSI_OTPTSU1TRMVAL1		0x334
+#define SYS_MCPU_CFG2			0x80c	/* CM33 INITSVTOR, used by rz-rproc */
+#define SYS_MCPU_CFG3			0x810	/* CM33 INITNSVTOR, used by rz-rproc */
 #define SYS_GBETH0_CFG			0xf00
 #define SYS_GBETH1_CFG			0xf04
 #define SYS_PCIE_INTX_CH0		0x1000
@@ -113,6 +115,8 @@ static bool rzv2h_regmap_readable_reg(struct device *dev, unsigned int reg)
 	case SYS_LSI_OTPTSU0TRMVAL1:
 	case SYS_LSI_OTPTSU1TRMVAL0:
 	case SYS_LSI_OTPTSU1TRMVAL1:
+	case SYS_MCPU_CFG2:
+	case SYS_MCPU_CFG3:
 	case SYS_GBETH0_CFG:
 	case SYS_GBETH1_CFG:
 	case SYS_PCIE_INTX_CH0:
@@ -146,6 +150,8 @@ static bool rzv2h_regmap_readable_reg(struct device *dev, unsigned int reg)
 static bool rzv2h_regmap_writeable_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
+	case SYS_MCPU_CFG2:
+	case SYS_MCPU_CFG3:
 	case SYS_GBETH0_CFG:
 	case SYS_GBETH1_CFG:
 	case SYS_PCIE_INTX_CH0:
