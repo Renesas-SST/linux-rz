@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/cleanup.h>
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
@@ -15,6 +16,7 @@
 
 #include "remoteproc_internal.h"
 
+
 /* Common CM33/CA55 address map (identical on RZ/V2H and RZ/{G,V}2L) */
 #define CM33_SRAM_START			0x00000000
 #define CM33_SRAM_END			0x3FFFFFFF
@@ -25,6 +27,7 @@
 #define CM33_TO_CA55_MASK		0x0FFFFFFF
 
 #define RSC_TBL_SIZE			0x1000
+#define RZ_POLL_TIMEOUT_US		100000
 
 /* RZ/V2H CM33 DDR (view) range */
 #define RZV2H_CM33_DDR_START		0x80000000
@@ -42,7 +45,7 @@
 #define RZV2H_CPG_CLKON_1		0x604
 #define RZV2H_CPG_CLKON_0		0x600
 #define RZV2H_CPG_LP_CM33_CTL1		0xC1C
-#define RZV2H_CPG_LP_CM33_CTL0		0xD2C
+#define RZV2H_CPG_BUS_12_MSTOP		0xD2C
 #define RZV2H_CPG_CM33_CTL		0xC0C
 #define RZV2H_CPG_RST_1			0x904
 #define RZV2H_CPG_RST_2			0x908
@@ -55,6 +58,16 @@
 #define RZV2H_CPG_LP_CR8_CTL3		0xC44
 #define RZV2H_CPG_CR8_CONFIG1		0xC14
 #define RZV2H_CPG_LP_CR8_CTL4		0xC48
+#define RZV2H_CPG_CR8_CORESTATUS    0xC10
+
+/* CPG_CR8_CORESTATUS: STANDBYWFI of both cores */
+#define RZV2H_CR8_STANDBYWFI		GENMASK(17, 16)
+
+/* CPG_BUS_m_MSTOP: upper half is the write enable of the lower half */
+#define RZV2H_MSTOP_SET(bit)		(BIT((bit) + 16) | BIT(bit))
+#define RZV2H_MSTOP_CLEAR(bit)		BIT((bit) + 16)
+#define RZV2H_MSTOP_CR8_TCM			10	/* CPG_BUS_10_MSTOP */
+#define RZV2H_MSTOP_MCPU_TO_ACPU	9	/* CPG_BUS_12_MSTOP */
 
 /* RZ/V2H CR8 TCM mapping */
 #define RZV2H_CR8_CORE0_ITCM_AXI_START	0x12040000
@@ -62,6 +75,7 @@
 #define RZV2H_CR8_CORE_TCM_MAP_SIZE	0x00040000
 #define RZV2H_RESET_CTRL_READY		BIT(4)
 #define RZV2H_RESET_RELEASEREQ		BIT(3)
+#define RZV2H_POWERUP_ACT			BIT(0)
 
 /* RZ/V2H core IDs (from "renesas,rz-core") */
 #define RZV2H_CM33_CORE_NUMBER		0x0
@@ -114,6 +128,7 @@ struct rz_rproc_pdata {
 	struct regmap *sysc_regmap;
 	u32 bootaddr[2];
 	u32 core; /* RZ/V2H core id; 0 (CM33) for RZ/G2L */
+	bool cr8_cluster_held;
 };
 
 /*
@@ -124,20 +139,43 @@ struct rz_rproc_pdata {
  * clock control are cluster-level. The only per-core control is nCPUHALT
  * (CR8_CONFIG1 BIT(0)/BIT(1)).
  *
- * A refcount tracks how many CR8 cores are running so the shared cluster is
- * brought up on the first core start (0 -> 1) and torn down only on the last
- * core stop (1 -> 0). It is protected by a mutex to avoid races when the two
- * cores are started/stopped concurrently.
+ * A refcount tracks how many CR8 cores use the cluster so it is brought up by
+ * the first user (0 -> 1) and torn down only by the last one (1 -> 0). Each
+ * core holds at most one reference (cr8_cluster_held). It is protected by a
+ * mutex to avoid races when the two cores are started/stopped concurrently.
+ *
+ * The reference is taken in .prepare and dropped in .unprepare: remoteproc
+ * loads the ELF (rproc_load_segments) before calling .start, and the TCMs are
+ * only accessible while the cluster is clocked and out of reset. Bringing the
+ * cluster up in .start would make every boot after a .stop write the TCMs of
+ * a gated cluster, which stalls the AXI bus and hangs the whole SoC.
+ *
+ * A core can only be (re)started from its reset vector while the cluster is
+ * being brought up: nCPUHALT merely pauses and resumes a CPU. Restarting a
+ * core that already ran, while the other core keeps the cluster up, would
+ * resume it at its old PC on top of the newly loaded image, so it is refused.
  */
 static DEFINE_MUTEX(rzv2h_cr8_cluster_lock);
 static unsigned int rzv2h_cr8_cluster_refcnt;
+/* BIT(core id) of the CR8 cores that ran since the cluster was brought up */
+static unsigned long rzv2h_cr8_ran_mask;
+
+static int rzv2h_cr8_cluster_get(struct rproc *rproc);
+static void rzv2h_cr8_cluster_put(struct rproc *rproc);
+
+static bool rz_rproc_is_cr8(const struct rz_rproc_pdata *pdata)
+{
+	return pdata->data->variant == RZ_VARIANT_RZV2H &&
+		   (pdata->core == RZV2H_CR8_CORE0_NUMBER ||
+		pdata->core == RZV2H_CR8_CORE1_NUMBER);
+}
 
 /* ================================================================== */
 /* Common helpers                                                     */
 /* ================================================================== */
 
 static int rz_rproc_mem_alloc(struct rproc *rproc,
-			      struct rproc_mem_entry *mem)
+				  struct rproc_mem_entry *mem)
 {
 	struct device *dev = rproc->dev.parent;
 	void __iomem *va;
@@ -212,17 +250,45 @@ static int rz_rproc_add_carveouts(struct rproc *rproc)
 		/* No need to translate pa to da, RZ use same map */
 		da = rmem->base;
 
-		if (strcmp(it.node->name, "vdev0buffer")) {
+		bool is_vdev_buffer = str_has_prefix(it.node->name, "vdev") &&
+							  strstr(it.node->name, "buffer");
+		bool is_vdev_vring = str_has_prefix(it.node->name, "vdev") &&
+							 strstr(it.node->name, "vring");
+		char lookup_name[24];
+		const char *carveout_name = it.node->name;
+		unsigned int vring_idx;
+
+		/*
+		 * The remoteproc core looks up vring carveouts with the per-rproc
+		 * pattern "vdev%dvring%d" where %d is rvdev->index (always 0 for
+		 * the first vdev of each rproc). Our DT uses globally-unique names
+		 * (e.g. vdev2vring0 on cr8_1), so rewrite them to the canonical
+		 * per-rproc form before registering.
+		 */
+		if (is_vdev_vring) {
+			const char *vring_tag = strstr(it.node->name, "vring");
+
+			if (vring_tag && kstrtouint(vring_tag + strlen("vring"),
+						10, &vring_idx) == 0) {
+				snprintf(lookup_name, sizeof(lookup_name),
+						 "vdev0vring%u", vring_idx);
+				carveout_name = lookup_name;
+			}
+		} else if (is_vdev_buffer) {
+			carveout_name = "vdev0buffer";
+		}
+
+		if (!is_vdev_buffer) {
 			mem = rproc_mem_entry_init(dev, NULL, rmem->base,
 						   rmem->size, da,
 						   rz_rproc_mem_alloc,
 						   rz_rproc_mem_release,
-						   it.node->name);
+						   carveout_name);
 		} else {
 			mem = rproc_of_resm_mem_entry_init(dev, index,
 							   rmem->size,
 							   rmem->base,
-							   it.node->name);
+							   carveout_name);
 		}
 
 		if (!mem)
@@ -238,6 +304,7 @@ static int rz_rproc_add_carveouts(struct rproc *rproc)
 static int rz_rproc_prepare(struct rproc *rproc)
 {
 	struct device *dev = rproc->dev.parent;
+	struct rz_rproc_pdata *pdata = rproc->priv;
 	int ret;
 
 	ret = rz_rproc_add_carveouts(rproc);
@@ -245,8 +312,24 @@ static int rz_rproc_prepare(struct rproc *rproc)
 		return ret;
 
 	/* If the remote core is already running (DETACHED), skip startup */
-	if (rproc->state == RPROC_DETACHED)
+	if (rproc->state == RPROC_DETACHED) {
 		dev_info(dev, "remote core already running, skip startup\n");
+		return 0;
+	}
+
+	/* CR8: the TCMs must be accessible before the ELF is loaded */
+	if (rz_rproc_is_cr8(pdata))
+		return rzv2h_cr8_cluster_get(rproc);
+
+	return 0;
+}
+
+static int rz_rproc_unprepare(struct rproc *rproc)
+{
+	struct rz_rproc_pdata *pdata = rproc->priv;
+
+	if (rz_rproc_is_cr8(pdata))
+		rzv2h_cr8_cluster_put(rproc);
 
 	return 0;
 }
@@ -293,7 +376,7 @@ static int cm33_to_ca55(struct rz_rproc_pdata *pdata, u64 *da)
 }
 
 static void *rz_rproc_da_to_va(struct rproc *rproc, u64 da, size_t len,
-			       bool *is_iomem)
+				   bool *is_iomem)
 {
 	struct device *dev = rproc->dev.parent;
 	struct rz_rproc_pdata *pdata = rproc->priv;
@@ -302,8 +385,8 @@ static void *rz_rproc_da_to_va(struct rproc *rproc, u64 da, size_t len,
 	int ret;
 
 	if (pdata->data->variant == RZ_VARIANT_RZV2H &&
-	    (pdata->core == RZV2H_CR8_CORE0_NUMBER ||
-	     pdata->core == RZV2H_CR8_CORE1_NUMBER)) {
+		(pdata->core == RZV2H_CR8_CORE0_NUMBER ||
+		 pdata->core == RZV2H_CR8_CORE1_NUMBER)) {
 		/*
 		 * CR8 cores use a flat address map: the ELF paddr equals the
 		 * physical (AXI) address, except for the low TCM window which
@@ -352,187 +435,326 @@ static void *rz_rproc_da_to_va(struct rproc *rproc, u64 da, size_t len,
 /* RZ/V2H CM33 startup / shutdown                                     */
 /* ================================================================== */
 
+static int rzv2h_cpg_poll(struct rz_rproc_pdata *pdata, unsigned int reg,
+			  u32 mask, u32 expected)
+{
+	u32 val;
+
+	return regmap_read_poll_timeout(pdata->cpg_regmap, reg, val,
+					(val & mask) == expected, 10,
+					RZ_POLL_TIMEOUT_US);
+}
+
+static int rzv2h_cm33_assert_reset(struct rz_rproc_pdata *pdata)
+{
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380000);
+	return rzv2h_cpg_poll(pdata, RZV2H_CPG_RSTMON_0, 0x000E0000, 0x000E0000);
+}
+
+/* Releasing Cold Reset (Normal mode), HW manual Table 2.2-30 */
+static int rzv2h_cm33_release_reset(struct rz_rproc_pdata *pdata)
+{
+	int ret;
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380008);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_RSTMON_0, 0x000E0000, 0x000C0000);
+	if (ret)
+		return ret;
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380038);
+	return rzv2h_cpg_poll(pdata, RZV2H_CPG_RSTMON_0, 0x000E0000, 0);
+}
+
+static int rzv2h_cm33_clk_off(struct rz_rproc_pdata *pdata)
+{
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00040000);
+	return rzv2h_cpg_poll(pdata, RZV2H_CPG_CLKMON_0,
+				  RZV2H_CPG_CLKON_1_CLK2_ON_MASK, 0);
+}
+
+static int rzv2h_cm33_set_vtor(struct rz_rproc_pdata *pdata, unsigned int reg,
+				   u32 addr)
+{
+	u32 val;
+	int ret;
+
+	ret = regmap_write(pdata->sysc_regmap, reg, addr);
+	if (!ret)
+		ret = regmap_read(pdata->sysc_regmap, reg, &val);
+	if (!ret && val != addr)
+		ret = -EACCES;  /* locked by SYS_MCPU_CFG5 */
+
+	return ret;
+}
+
 static int rzv2h_cm33_startup(struct rproc *rproc)
 {
 	struct device *dev = rproc->dev.parent;
 	struct rz_rproc_pdata *pdata = rproc->priv;
-	u32 clkmon, rstmon;
+	u32 clkmon;
+	int ret;
 
-	/* Initialize SRAM/DDR configuration for CM33 */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CM33_CTL0, 0x02000000);
+	/* Clear MSTOP between the MCPU bus and the ACPU bus */
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_BUS_12_MSTOP,
+			 RZV2H_MSTOP_CLEAR(RZV2H_MSTOP_MCPU_TO_ACPU));
 
-	/* Check CM33 clock status */
 	regmap_read(pdata->cpg_regmap, RZV2H_CPG_CLKMON_0, &clkmon);
 
-	/* Ensure CM33 is in reset */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380000);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_0, &rstmon);
-	} while ((rstmon & 0x000E0000) != 0x000E0000);
+	ret = rzv2h_cm33_assert_reset(pdata);
+	if (ret)
+		goto err;
 
-	/* If clock was already on, disable it first to ensure clean reset */
 	if (clkmon & RZV2H_CPG_CLKON_1_CLK2_ON_MASK) {
-		regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00040000);
-		do {
-			regmap_read(pdata->cpg_regmap, RZV2H_CPG_CLKMON_0, &clkmon);
-		} while (clkmon & RZV2H_CPG_CLKON_1_CLK2_ON_MASK);
-		dev_info(dev, "CM33 clock disabled for clean initialization\n");
+		ret = rzv2h_cm33_clk_off(pdata);
+		if (ret)
+			goto err;
 	}
 
-	regmap_write(pdata->sysc_regmap, RZV2H_SYS_MCPU_CFG2, pdata->bootaddr[0]);
-	regmap_write(pdata->sysc_regmap, RZV2H_SYS_MCPU_CFG3, pdata->bootaddr[1]);
+	/*
+	 * If the boot vectors cannot be programmed the CM33 would start from its
+	 * boot ROM, which re-initialises the SoC and hangs the running system.
+	 * Leave the core in reset instead.
+	 */
+	ret = rzv2h_cm33_set_vtor(pdata, RZV2H_SYS_MCPU_CFG2, pdata->bootaddr[0]);
+	if (!ret)
+		ret = rzv2h_cm33_set_vtor(pdata, RZV2H_SYS_MCPU_CFG3,
+					  pdata->bootaddr[1]);
+	if (ret) {
+		dev_err(dev, "failed to set CM33 boot vectors: %d\n", ret);
+		return ret;
+	}
 	dev_info(dev, "CM33 bootaddr secure=0x%08x non-secure=0x%08x\n",
 		 pdata->bootaddr[0], pdata->bootaddr[1]);
 
 	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00040004);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_CLKMON_0, &clkmon);
-	} while ((clkmon & RZV2H_CPG_CLKON_1_CLK2_ON_MASK) == 0);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_CLKMON_0,
+				 RZV2H_CPG_CLKON_1_CLK2_ON_MASK,
+				 RZV2H_CPG_CLKON_1_CLK2_ON_MASK);
+	if (ret)
+		goto err;
 
 	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CM33_CTL1, 0x00003100);
 
-	/*
-	 * Disable fetch (CM33_CTL bit[0] = 1) before releasing reset.
-	 * CM33 will be out of reset but not executing — the remoteproc
-	 * framework loads the ELF after start() returns. Fetch is released
-	 * in rz_rproc_loaded() only after the ELF is fully in memory.
-	 *
-	 * Without this, CM33 starts fetching immediately after reset release
-	 * before the ELF is loaded → falls into SCIF download mode.
-	 */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CM33_CTL, 0x00000001);
+	/* Fetch disable is a debug mode setting: boot normally */
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CM33_CTL, 0x00000000);
 
-	/* Two-step reset release sequence */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380008);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_0, &rstmon);
-	} while ((rstmon & 0x000E0000) != 0x000C0000);
+	ret = rzv2h_cm33_release_reset(pdata);
+	if (ret)
+		goto err;
 
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380038);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_0, &rstmon);
-	} while (rstmon & 0x000E0000);
+	dev_info(dev, "CM33 released from reset\n");
+	return 0;
+
+err:
+	dev_err(dev, "CM33 CPG timeout\n");
+	return ret;
+}
+
+/*
+ * Leave the CM33 in a state from which the next start works.
+ *
+ * The CM33 cold reset is to be applied while the CM33 is in system MPU sleep
+ * (HW manual Table 2.2-29). A firmware that is stopped while running violates
+ * this, and the next reset release then does not start execution: every other
+ * start fails. So run a stub from the boot vector that only executes WFI, and
+ * reset the core again while it waits there.
+ *
+ * The stub must not enter the CM33 sleep mode proper (SCR.SLEEPDEEP). It does
+ * set the sleep and deep standby status bits of CPG_LP_CM33CTL0 that the
+ * manual asks for, but resetting the CM33 in that state without the rest of
+ * the CM33 sleep mode procedure (CPG_LP_CTL1 CM33SLEEP_REQ/ACK handshake)
+ * leads to a SoC hang or reset some seconds to minutes later.
+ */
+static void rzv2h_cm33_park(struct rproc *rproc)
+{
+	struct rz_rproc_pdata *pdata = rproc->priv;
+	struct device *dev = rproc->dev.parent;
+	u32 vtor = pdata->bootaddr[0];
+	void __iomem *va;
+
+	va = (void __iomem *)rz_rproc_da_to_va(rproc, vtor, 16, NULL);
+	if (!va) {
+		dev_warn(dev, "no memory at boot vector, CM33 not parked\n");
+		return;
+	}
+
+	writel(vtor + 0x100, va + 0x0);     /* initial SP (unused) */
+	writel((vtor + 0x8) | 1, va + 0x4); /* reset handler, Thumb */
+	writel(0xBF30B672, va + 0x8);       /* cpsid i; wfi */
+	writel(0x0000E7FD, va + 0xC);       /* b wfi */
+	wmb();  /* stub in SRAM before the core fetches it */
 
 	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CM33_CTL, 0x00000000);
-	dev_info(dev, "CM33 fetch enabled, core is running\n");
+	if (rzv2h_cm33_release_reset(pdata))
+		dev_warn(dev, "CM33 park: reset release timeout\n");
+	usleep_range(1000, 2000);
+	rzv2h_cm33_assert_reset(pdata);
 
-	return 0;
+	memset_io(va, 0, 16);
 }
 
 static int rzv2h_stop_cm33(struct rproc *rproc)
 {
 	struct rz_rproc_pdata *pdata = rproc->priv;
-	struct rproc_mem_entry *carveout;
-	u32 rstmon, clkmon;
+	int ret;
 
-	/* Put CM33 back into reset before gating its clock */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_1, 0x00380000);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_0, &rstmon);
-	} while ((rstmon & 0x000E0000) != 0x000E0000);
+	/*
+	 * Its carveouts are not cleared: cm33_rsc_table is the OpenAMP window
+	 * shared with the CR8 cores.
+	 */
+	ret = rzv2h_cm33_assert_reset(pdata);
+	if (ret)
+		return ret;
 
-	/* Disable fetch */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CM33_CTL, 0x00000001);
+	rzv2h_cm33_park(rproc);
 
-	/* Gate CM33 clock */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00040000);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_CLKMON_0, &clkmon);
-	} while (clkmon & RZV2H_CPG_CLKON_1_CLK2_ON_MASK);
-
-	/* Clear registered carveouts after the core is quiesced */
-	list_for_each_entry(carveout, &rproc->carveouts, node) {
-		if (!carveout->va)
-			continue;
-		memset(carveout->va, 0, carveout->len);
-	}
-
-	return 0;
+	return rzv2h_cm33_clk_off(pdata);
 }
 
 /* ================================================================== */
 /* RZ/V2H CR8 startup / shutdown                                      */
 /* ================================================================== */
 
-static int rzv2h_cr8_startup(struct rproc *rproc)
+/*
+ * Cold reset release, HW manual Table 2.2-45, with both CPUs held by nCPUHALT
+ * so that the TCMs can be loaded (step 11) before a core is started.
+ */
+static int rzv2h_cr8_cluster_up(struct rz_rproc_pdata *pdata)
+{
+	int ret;
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_0, 0xE000E000);
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00030003);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_CLKMON_0, 0x0003E000, 0x0003E000);
+	if (ret)
+		return ret;
+
+	/* Clocks are supplied: clear MSTOP of the CR8 TCM bus */
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_BUS_10_MSTOP,
+			 RZV2H_MSTOP_CLEAR(RZV2H_MSTOP_CR8_TCM));
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x1FFF0000);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_RSTMON_0, 0xFFF00000, 0xFFF00000);
+	if (!ret)
+		ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_RSTMON_1, 0x1, 0x1);
+	if (ret)
+		return ret;
+
+	/* Debug mode setting (step 2), keeps the CR8 debuggable over JTAG */
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL3, 0x003F0000);
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1, 0x00000000);
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x10001000);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_LP_CR8_CTL4,
+				 RZV2H_RESET_CTRL_READY, RZV2H_RESET_CTRL_READY);
+	if (ret)
+		return ret;
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL4, 0x00000020);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_LP_CR8_CTL4,
+				 RZV2H_RESET_RELEASEREQ, RZV2H_RESET_RELEASEREQ);
+	if (ret)
+		return ret;
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x1FFF1FFF);
+	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_LP_CR8_CTL4, RZV2H_POWERUP_ACT, 0);
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL4, 0x00000000);
+
+	return ret;
+}
+
+/* Cold reset (HW manual Table 2.2-44), then module stop of the cluster */
+static void rzv2h_cr8_cluster_down(struct rproc *rproc)
 {
 	struct rz_rproc_pdata *pdata = rproc->priv;
-	u32 val;
+
+	if (rzv2h_cpg_poll(pdata, RZV2H_CPG_CR8_CORESTATUS,
+			   RZV2H_CR8_STANDBYWFI, RZV2H_CR8_STANDBYWFI))
+		dev_dbg(rproc->dev.parent, "CR8 cores not in WFI, resetting\n");
+
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x1FFF0000);
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_BUS_10_MSTOP,
+			 RZV2H_MSTOP_SET(RZV2H_MSTOP_CR8_TCM));
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00030000);
+	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_0, 0xE0000000);
+}
+
+/*
+ * Take a cluster reference for this core. The first user brings the cluster
+ * up (clocks on, resets released) with both CPUs held by nCPUHALT, so the
+ * TCMs can be loaded; the core itself is released later in .start.
+ */
+static int rzv2h_cr8_cluster_get(struct rproc *rproc)
+{
+	struct rz_rproc_pdata *pdata = rproc->priv;
+	int ret;
 
 	guard(mutex)(&rzv2h_cr8_cluster_lock);
 
-	/* Cluster already brought up by the other core */
-	if (rzv2h_cr8_cluster_refcnt++)
+	if (pdata->cr8_cluster_held)
 		return 0;
 
-	/* Assert MSTOP for CR8 bus */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_BUS_10_MSTOP, 0x04000000);
+	if (rzv2h_cr8_cluster_refcnt) {
+		/* Cluster already brought up by the other core */
+		if (rzv2h_cr8_ran_mask & BIT(pdata->core)) {
+			dev_err(rproc->dev.parent,
+				"CR8 core %u cannot be restarted while the other CR8 core runs (no per-core reset); stop both cores first\n",
+				pdata->core - RZV2H_CR8_CORE0_NUMBER);
+			return -EBUSY;
+		}
+		pdata->cr8_cluster_held = true;
+		rzv2h_cr8_cluster_refcnt++;
+		return 0;
+	}
+	ret = rzv2h_cr8_cluster_up(pdata);
+	if (ret) {
+		dev_err(rproc->dev.parent, "CR8 cluster bring-up timeout\n");
+		rzv2h_cr8_cluster_down(rproc);
+		return ret;
+	}
 
-	/* Set CR8 Clock to ON */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_0, 0xE000E000);
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00030003);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_CLKMON_0, &val);
-	} while ((val & 0x0003E000) == 0);
-
-	/* Reset all CR8 resets */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x1FFF0000);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_0, &val);
-	} while ((val & 0xFFF00000) != 0xFFF00000);
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_1, &val);
-	} while ((val & 0x1) != 0x1);
-
-	/* Configure debug mode for CR8 */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL3, 0x003F0000);
-
-	/* Set nCPUHALT to 00b (halt both CR8 CPUs at cluster bring-up) */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1, 0x00000000);
-
-	/* Release cold reset for CR8 */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x10001000);
-
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL4, &val);
-	} while (!(val & RZV2H_RESET_CTRL_READY));
-
-	/* Trigger reset release sequence */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL4, 0x00000020);
-
-	do {
-		regmap_read(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL4, &val);
-	} while (!(val & RZV2H_RESET_RELEASEREQ));
-
-	/* Release all CR8 resets */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x1FFF1FFF);
-
-	/* Clear the RESET_TRIG */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_LP_CR8_CTL4, 0x00000000);
+	pdata->cr8_cluster_held = true;
+	rzv2h_cr8_cluster_refcnt = 1;
+	rzv2h_cr8_ran_mask = 0;
 
 	return 0;
 }
 
-static int rzv2h_cr8_startup_and_config(struct rproc *rproc)
+/*
+ * Drop this core's cluster reference. The CR8 does not support per-core
+ * reset/clock gating, so only the last user tears the shared cluster down.
+ */
+static void rzv2h_cr8_cluster_put(struct rproc *rproc)
 {
 	struct rz_rproc_pdata *pdata = rproc->priv;
-	struct device *dev = rproc->dev.parent;
-	u32 val;
-	int ret;
 
-	ret = rzv2h_cr8_startup(rproc);
-	if (ret) {
-		dev_err(dev, "CR8 startup failed: %d\n", ret);
-		return ret;
-	}
+	guard(mutex)(&rzv2h_cr8_cluster_lock);
 
-	/* Set nCPUHALT to run this specific CR8 core (per-core control) */
-	regmap_read(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1, &val);
-	if (pdata->core == RZV2H_CR8_CORE0_NUMBER)
-		val |= BIT(0);
-	else if (pdata->core == RZV2H_CR8_CORE1_NUMBER)
-		val |= BIT(1);
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1, val);
+	if (!pdata->cr8_cluster_held)
+		return;
+	pdata->cr8_cluster_held = false;
+
+	if (WARN_ON(rzv2h_cr8_cluster_refcnt == 0))
+		return;
+	if (--rzv2h_cr8_cluster_refcnt)
+		return;
+
+	rzv2h_cr8_cluster_down(rproc);
+}
+
+static u32 rzv2h_cr8_halt_bit(struct rz_rproc_pdata *pdata)
+{
+	return pdata->core == RZV2H_CR8_CORE0_NUMBER ? BIT(0) : BIT(1);
+}
+
+static int rzv2h_start_cr8(struct rproc *rproc)
+{
+	struct rz_rproc_pdata *pdata = rproc->priv;
+
+	/* The cluster is up (taken in .prepare); release this core's nCPUHALT */
+	guard(mutex)(&rzv2h_cr8_cluster_lock);
+	rzv2h_cr8_ran_mask |= BIT(pdata->core);
+	regmap_update_bits(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1,
+			   rzv2h_cr8_halt_bit(pdata), rzv2h_cr8_halt_bit(pdata));
 
 	return 0;
 }
@@ -541,44 +763,34 @@ static int rzv2h_stop_cr8(struct rproc *rproc)
 {
 	struct rz_rproc_pdata *pdata = rproc->priv;
 	struct rproc_mem_entry *carveout;
-
-	guard(mutex)(&rzv2h_cr8_cluster_lock);
-
-	if (WARN_ON(rzv2h_cr8_cluster_refcnt == 0))
-		return 0;
+	void *marker = NULL;
 
 	/*
-	 * Per-core control is limited to nCPUHALT (CR8_CONFIG1). The CR8 does
-	 * not support per-core reset/clock gating, so halt only this core's
-	 * CPU and leave the shared cluster running if the other core is up.
+	 * Per-core control is limited to nCPUHALT (CR8_CONFIG1). The shared
+	 * cluster is released in .unprepare, once the core is quiesced.
 	 */
-	if (pdata->core == RZV2H_CR8_CORE0_NUMBER)
+	scoped_guard(mutex, &rzv2h_cr8_cluster_lock)
 		regmap_update_bits(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1,
-				   BIT(0), 0);
-	else if (pdata->core == RZV2H_CR8_CORE1_NUMBER)
-		regmap_update_bits(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1,
-				   BIT(1), 0);
+				   rzv2h_cr8_halt_bit(pdata), 0);
 
-	/* Clear this core's carveouts (keep shared/TCM regions intact) */
+	/*
+	 * Only clear the "running" marker checked at probe (first word of
+	 * cr8_ddr), not the whole carveouts: they are not private to this core
+	 * (cr8_sram3 of core1 includes core0's init-wait word, and the OpenAMP
+	 * window cr8_rsc_table is shared by all remote cores). Wiping them would
+	 * corrupt a core that is still running. They may also cover the TF-A
+	 * secure DDR (cm33_rsc_table reaches 0x44dfffff, BL31 is at
+	 * 0x44000000): wiping BL31 hangs the next PSCI call (e.g. SYSTEM_RESET
+	 * on reboot).
+	 */
 	list_for_each_entry(carveout, &rproc->carveouts, node) {
-		if (!carveout->va)
-			continue;
-		if (strstr(carveout->name, "tcm"))
-			continue;
-		memset(carveout->va, 0, carveout->len);
+		if (carveout->va && !strcmp(carveout->name, "cr8_ddr")) {
+			marker = carveout->va;
+			break;
+		}
 	}
-
-	/*
-	 * Reset/clock are cluster-level, so only the last core tears down
-	 * the shared cluster.
-	 */
-	if (--rzv2h_cr8_cluster_refcnt)
-		return 0;
-
-	/* Assert cluster reset, then gate cluster clocks */
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_RST_2, 0x1FFF0000);
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00030000);
-	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_0, 0xE0000000);
+	if (marker)
+		writel(0, (void __iomem *)marker);
 
 	return 0;
 }
@@ -602,7 +814,7 @@ static int rzv2h_rproc_start(struct rproc *rproc)
 
 	case RZV2H_CR8_CORE0_NUMBER:
 	case RZV2H_CR8_CORE1_NUMBER:
-		return rzv2h_cr8_startup_and_config(rproc);
+		return rzv2h_start_cr8(rproc);
 
 	default:
 		dev_err(dev, "Unsupported core id: %d\n", pdata->core);
@@ -648,6 +860,7 @@ static int rzg2l_rproc_start(struct rproc *rproc)
 {
 	struct rz_rproc_pdata *pdata = rproc->priv;
 	u32 val;
+	int ret;
 
 	regmap_read(pdata->cpg_regmap, RZG2L_CPG_SIPLL3_MON, &val);
 	if ((val & RZG2L_PLL3_RESET) == 0x1) {
@@ -664,17 +877,17 @@ static int rzg2l_rproc_start(struct rproc *rproc)
 	regmap_write(pdata->sysc_regmap, RZG2L_SYS_CM33_CFG3, pdata->bootaddr[1]);
 
 	regmap_write(pdata->cpg_regmap, RZG2L_CPG_CLKON_CM33, 0x00010001);
-	do {
-		regmap_read(pdata->cpg_regmap, RZG2L_CPG_CLKMON_CM33, &val);
-	} while ((val & RZG2L_CPG_CLKON_CM33_CLK0_ON_MASK) == 0);
+	ret = regmap_read_poll_timeout(pdata->cpg_regmap, RZG2L_CPG_CLKMON_CM33,
+					   val, val & RZG2L_CPG_CLKON_CM33_CLK0_ON_MASK,
+					   10, RZ_POLL_TIMEOUT_US);
+	if (ret)
+		return ret;
 
 	regmap_write(pdata->cpg_regmap, RZG2L_CPG_RST_CM33, 0x00040004);
 	regmap_write(pdata->cpg_regmap, RZG2L_CPG_RST_CM33, 0x00070007);
-	do {
-		regmap_read(pdata->cpg_regmap, RZG2L_CPG_RSTMON_CM33, &val);
-	} while (val & 0x00000007);
-
-	return 0;
+	return regmap_read_poll_timeout(pdata->cpg_regmap, RZG2L_CPG_RSTMON_CM33,
+					val, !(val & 0x00000007), 10,
+					RZ_POLL_TIMEOUT_US);
 }
 
 static int rzg2l_rproc_stop(struct rproc *rproc)
@@ -741,6 +954,7 @@ static int rz_rproc_parse_fw(struct rproc *rproc, const struct firmware *fw)
 }
 static const struct rproc_ops rz_rproc_ops = {
 	.prepare		= rz_rproc_prepare,
+	.unprepare		= rz_rproc_unprepare,
 	.start			= rz_rproc_start,
 	.stop			= rz_rproc_stop,
 	.attach			= rz_rproc_attach,
@@ -867,8 +1081,8 @@ static int rz_rproc_check_running(struct platform_device *pdev,
 
 	/* RZ/V2H CR8: check the CR8 DDR marker written by firmware */
 	if (data->variant == RZ_VARIANT_RZV2H &&
-	    (pdata->core == RZV2H_CR8_CORE0_NUMBER ||
-	     pdata->core == RZV2H_CR8_CORE1_NUMBER)) {
+		(pdata->core == RZV2H_CR8_CORE0_NUMBER ||
+		 pdata->core == RZV2H_CR8_CORE1_NUMBER)) {
 		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 						   "cr8_ddr");
 		if (!res) {
@@ -882,7 +1096,13 @@ static int rz_rproc_check_running(struct platform_device *pdev,
 
 		if (ioread32(ddr_cr8_base) != 0) {
 			*running = true;
-			rzv2h_cr8_cluster_refcnt = 1;
+			/* The running core holds a cluster reference until stopped */
+			guard(mutex)(&rzv2h_cr8_cluster_lock);
+			if (!pdata->cr8_cluster_held) {
+				pdata->cr8_cluster_held = true;
+				rzv2h_cr8_cluster_refcnt++;
+				rzv2h_cr8_ran_mask |= BIT(pdata->core);
+			}
 		}
 		return 0;
 	}
@@ -890,11 +1110,11 @@ static int rz_rproc_check_running(struct platform_device *pdev,
 	/*
 	 * RZ/V2H CM33: check both RSTMON and CM33_CTL.
 	 * U-Boot handoff leaves: RSTMON=0 (reset deasserted) + CM33_CTL=1
-	 * (fetch disabled). That is NOT running — Linux must load firmware
-	 * and release fetch via rz_rproc_loaded().
+	 * (fetch disabled). That is NOT running: Linux loads the firmware and
+	 * restarts the core.
 	 */
 	if (data->variant == RZ_VARIANT_RZV2H &&
-	    pdata->core == RZV2H_CM33_CORE_NUMBER) {
+		pdata->core == RZV2H_CM33_CORE_NUMBER) {
 		regmap_read(pdata->cpg_regmap, data->rstmon_reg, &rstmon);
 		regmap_read(pdata->cpg_regmap, RZV2H_CPG_CM33_CTL, &cm33ctl);
 		*running = !(rstmon & data->rstmon_mask) && !(cm33ctl & BIT(0));
@@ -949,8 +1169,8 @@ static int rz_rproc_probe(struct platform_device *pdev)
 			if (!res)
 				continue;
 			if (!devm_request_mem_region(dev, res->start,
-						     resource_size(res),
-						     dev_name(dev))) {
+							 resource_size(res),
+							 dev_name(dev))) {
 				dev_err(dev, "unable to request memory region\n");
 				return -EBUSY;
 			}
@@ -984,7 +1204,7 @@ static int rz_rproc_probe(struct platform_device *pdev)
 	if (pdata->core == RZV2H_CM33_CORE_NUMBER) {
 		for (i = 0; i < 2; i++) {
 			if (of_property_read_u32_index(np, "renesas,rz-bootaddrs",
-						       i, &pdata->bootaddr[i])) {
+							   i, &pdata->bootaddr[i])) {
 				dev_err(dev, "invalid boot address\n");
 				return -EINVAL;
 			}
@@ -1015,7 +1235,7 @@ static int rz_rproc_probe(struct platform_device *pdev)
 	 *   1. Core never touched — fully offline.
 	 *   2. U-Boot handoff: reset deasserted, fetch disabled (CM33_CTL=1).
 	 * In both cases state stays RPROC_OFFLINE. Linux loads the ELF and
-	 * rz_rproc_loaded() releases fetch after load completes.
+	 * .start cold-boots the core.
 	 */
 
 	platform_set_drvdata(pdev, rproc);
@@ -1055,7 +1275,7 @@ static const struct of_device_id rz_rproc_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, rz_rproc_of_match);
 static struct platform_driver rz_rproc_driver = {
-	.probe	= rz_rproc_probe,
+	.probe  = rz_rproc_probe,
 	.remove = rz_rproc_remove,
 	.driver = {
 		.name = "rz-rproc",
