@@ -369,8 +369,8 @@ int rsnd_adg_ssi_clk_try_start(struct rsnd_mod *ssi_mod, unsigned int rate)
 	if (0 == (rate % 8000))
 		ckr |= BRGCKR_31; /* use BRGB output = 48kHz */
 	if (ckr != adg->ckr) {
-		rsnd_mod_bset(adg_mod, BRGCKR, 0x80770000, adg->ckr);
 		adg->ckr = ckr;
+		rsnd_mod_bset(adg_mod, BRGCKR, 0x80770000, adg->ckr);
 	}
 
 	dev_dbg(dev, "CLKOUT is based on BRG%c (= %dHz)\n",
