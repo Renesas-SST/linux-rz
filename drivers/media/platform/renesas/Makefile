@@ -6,6 +6,7 @@
 obj-y += rcar-isp/
 obj-y += rcar-vin/
 obj-y += rzg2l-cru/
+obj-y += v4h-cam-aggregator/
 obj-y += vsp1/
 
 obj-$(CONFIG_VIDEO_RCAR_CSI2) += rcar-csi2.o

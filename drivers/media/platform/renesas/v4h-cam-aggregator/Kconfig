@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config VIDEO_RCAR_V4H_CAM_AGGREGATOR
+	bool "R-Car V4H single-node camera for plain V4L2 applications"
+	depends on V4L_PLATFORM_DRIVERS
+	depends on VIDEO_DEV && OF && MEDIA_CONTROLLER
+	depends on ARCH_RENESAS || COMPILE_TEST
+	depends on VIDEO_RCAR_VIN=y && VIDEO_RCAR_ISP=y
+	select VIDEO_V4L2_SUBDEV_API
+	select VIDEOBUF2_VMALLOC
+	default y
+	help
+	  The R-Car V4H camera is exposed as raw Bayer VIN nodes plus an ISP
+	  that is driven from userspace (libcamera), so applications such as
+	  VLC, which only open single-plane capture nodes, cannot show it.
+
+	  This driver runs the VIN to ISP loop in the kernel and registers one
+	  BGR32 capture node per enabled camera connector (J1: /dev/video21,
+	  J2: /dev/video22) with the result. It
+	  finds the camera itself (Raspberry Pi Camera v2 imx219 or v3 imx708),
+	  sets the pipeline formats and regulates exposure, gain and white
+	  balance from the picture. While the node streams, libcamera cannot
+	  use the camera.
+
+	  The driver is always built into the kernel, so /dev/video21 is there
+	  after boot without loading anything.
