@@ -515,12 +515,18 @@
 	phy-mode = "rgmii-id";
 	status = "okay";
 
-	phy4: ethernet-phy@4 {
-		reg = <0x4>;
+	/*
+	 * The MDIO addresses of the PHYs are set by on-board strapping which
+	 * differs between boards, so leave "reg" out and let the MDIO core
+	 * scan the bus.  Nodes are ordered by address: the first one gets the
+	 * lowest address and is used by eth1.
+	 */
+	phy11: ethernet-phy-lower {
+		compatible = "ethernet-phy-ieee802.3-c22";
 	};
 
-	phy11: ethernet-phy@1 {
-		reg = <0x1>;
+	phy4: ethernet-phy-upper {
+		compatible = "ethernet-phy-ieee802.3-c22";
 	};
 };
 
