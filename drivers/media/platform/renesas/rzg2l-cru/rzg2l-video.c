@@ -1491,9 +1491,50 @@ static void rzg2l_cru_format_align(struct rzg2l_cru_dev *cru,
 		pix->width, pix->height, pix->bytesperline, pix->sizeimage);
 }
 
+/*
+ * Size of the image the pipeline delivers to the video node: the active format
+ * of the subdev linked to it. rzg2l_cru_video_link_validate() rejects any other
+ * size with -EPIPE, so the video node must follow it.
+ */
+static bool rzg2l_cru_pipeline_size(struct rzg2l_cru_dev *cru, u32 *width,
+				    u32 *height)
+{
+	struct v4l2_subdev_format fmt = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+	};
+	struct media_pad *remote;
+
+	remote = media_pad_remote_pad_first(&cru->pad);
+	if (!remote || !is_media_entity_v4l2_subdev(remote->entity))
+		return false;
+
+	fmt.pad = remote->index;
+	if (v4l2_subdev_call(media_entity_to_v4l2_subdev(remote->entity), pad,
+			     get_fmt, NULL, &fmt))
+		return false;
+
+	*width = fmt.format.width;
+	*height = fmt.format.height;
+
+	return true;
+}
+
 static void rzg2l_cru_try_format(struct rzg2l_cru_dev *cru,
 				 struct v4l2_pix_format *pix)
 {
+	u32 width, height;
+
+	/*
+	 * Applications that pick the largest size the sensor can do (VLC) would
+	 * otherwise leave the node at a size that no longer matches the pipeline
+	 * set up with media-ctl, and VIDIOC_STREAMON would fail with -EPIPE.
+	 * Report the pipeline size instead, as a V4L2 driver may adjust a size.
+	 */
+	if (rzg2l_cru_pipeline_size(cru, &width, &height)) {
+		pix->width = width;
+		pix->height = height;
+	}
+
 	/*
 	 * The V4L2 specification clearly documents the colorspace fields
 	 * as being set by drivers for capture devices. Using the values
