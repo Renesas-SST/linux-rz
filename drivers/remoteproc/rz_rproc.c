@@ -16,7 +16,6 @@
 
 #include "remoteproc_internal.h"
 
-
 /* Common CM33/CA55 address map (identical on RZ/V2H and RZ/{G,V}2L) */
 #define CM33_SRAM_START			0x00000000
 #define CM33_SRAM_END			0x3FFFFFFF
@@ -28,6 +27,14 @@
 
 #define RSC_TBL_SIZE			0x1000
 #define RZ_POLL_TIMEOUT_US		100000
+
+/*
+ * RZ/V2H DRAM that Linux must never touch from the CR8 path: TF-A BL31
+ * 0x44000000-0x4403FFFF, mailbox 0x44040000 and OP-TEE BL32
+ * 0x44100000-0x47DFFFFF (END is inclusive).
+ */
+#define RZV2H_SECURE_DRAM_START		0x43F00000
+#define RZV2H_SECURE_DRAM_END		0x47DFFFFF
 
 /* RZ/V2H CM33 DDR (view) range */
 #define RZV2H_CM33_DDR_START		0x80000000
@@ -58,7 +65,7 @@
 #define RZV2H_CPG_LP_CR8_CTL3		0xC44
 #define RZV2H_CPG_CR8_CONFIG1		0xC14
 #define RZV2H_CPG_LP_CR8_CTL4		0xC48
-#define RZV2H_CPG_CR8_CORESTATUS    0xC10
+#define RZV2H_CPG_CR8_CORESTATUS	0xC10
 
 /* CPG_CR8_CORESTATUS: STANDBYWFI of both cores */
 #define RZV2H_CR8_STANDBYWFI		GENMASK(17, 16)
@@ -68,6 +75,7 @@
 #define RZV2H_MSTOP_CLEAR(bit)		BIT((bit) + 16)
 #define RZV2H_MSTOP_CR8_TCM			10	/* CPG_BUS_10_MSTOP */
 #define RZV2H_MSTOP_MCPU_TO_ACPU	9	/* CPG_BUS_12_MSTOP */
+
 
 /* RZ/V2H CR8 TCM mapping */
 #define RZV2H_CR8_CORE0_ITCM_AXI_START	0x12040000
@@ -395,6 +403,14 @@ static void *rz_rproc_da_to_va(struct rproc *rproc, u64 da, size_t len,
 		 * to look up carveouts - they must NOT go through the CM33
 		 * translation path.
 		 */
+		if (da <= RZV2H_SECURE_DRAM_END &&
+		    da + len > RZV2H_SECURE_DRAM_START) {
+			dev_err(dev, "refusing da 0x%llx len 0x%zx: overlaps secure DRAM 0x%x-0x%x\n",
+				da, len, RZV2H_SECURE_DRAM_START,
+				RZV2H_SECURE_DRAM_END);
+			return NULL;
+		}
+
 		if (da < RZV2H_CR8_CORE_TCM_MAP_SIZE) {
 			if (pdata->core == RZV2H_CR8_CORE0_NUMBER)
 				da += RZV2H_CR8_CORE0_ITCM_AXI_START;
@@ -528,8 +544,8 @@ static int rzv2h_cm33_startup(struct rproc *rproc)
 
 	regmap_write(pdata->cpg_regmap, RZV2H_CPG_CLKON_1, 0x00040004);
 	ret = rzv2h_cpg_poll(pdata, RZV2H_CPG_CLKMON_0,
-				 RZV2H_CPG_CLKON_1_CLK2_ON_MASK,
-				 RZV2H_CPG_CLKON_1_CLK2_ON_MASK);
+			     RZV2H_CPG_CLKON_1_CLK2_ON_MASK,
+			     RZV2H_CPG_CLKON_1_CLK2_ON_MASK);
 	if (ret)
 		goto err;
 
@@ -744,6 +760,35 @@ static void rzv2h_cr8_cluster_put(struct rproc *rproc)
 static u32 rzv2h_cr8_halt_bit(struct rz_rproc_pdata *pdata)
 {
 	return pdata->core == RZV2H_CR8_CORE0_NUMBER ? BIT(0) : BIT(1);
+}
+
+/*
+ * True if this CR8 core is really executing: cluster clocks supplied, cluster
+ * resets released and the core's nCPUHALT released. The cr8_ddr marker alone
+ * is not enough: DDR keeps its content across a board reset, and after reset
+ * the boot stages leave the cluster clocked and out of reset but with both
+ * CPUs held by nCPUHALT (CR8_CONFIG1 = 0), so a stale marker would make a
+ * halted core look "detached".
+ *
+ * A core started by a boot stage releases nCPUHALT (U-Boot "cr80start" writes
+ * CR8_CONFIG1 = 3) and is detected. A core that a JTAG debugger restarted
+ * through its debug logic keeps nCPUHALT = 0 and is reported offline: no CPG
+ * register tells it apart from a halted core, and reading the CR8 debug
+ * registers through the CoreSight window (0x1F810000) from the A55 hangs the
+ * SoC.
+ */
+static bool rzv2h_cr8_core_released(struct rz_rproc_pdata *pdata)
+{
+	u32 clkmon, rstmon0, rstmon1, config1;
+
+	regmap_read(pdata->cpg_regmap, RZV2H_CPG_CLKMON_0, &clkmon);
+	regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_0, &rstmon0);
+	regmap_read(pdata->cpg_regmap, RZV2H_CPG_RSTMON_1, &rstmon1);
+	regmap_read(pdata->cpg_regmap, RZV2H_CPG_CR8_CONFIG1, &config1);
+
+	return (clkmon & 0x0003E000) == 0x0003E000 &&
+	       !(rstmon0 & 0xFFF00000) && !(rstmon1 & 0x1) &&
+	       (config1 & rzv2h_cr8_halt_bit(pdata));
 }
 
 static int rzv2h_start_cr8(struct rproc *rproc)
@@ -1079,7 +1124,7 @@ static int rz_rproc_check_running(struct platform_device *pdev,
 
 	*running = false;
 
-	/* RZ/V2H CR8: check the CR8 DDR marker written by firmware */
+	/* RZ/V2H CR8: DDR marker written by the firmware + core really released */
 	if (data->variant == RZ_VARIANT_RZV2H &&
 		(pdata->core == RZV2H_CR8_CORE0_NUMBER ||
 		 pdata->core == RZV2H_CR8_CORE1_NUMBER)) {
@@ -1094,7 +1139,8 @@ static int rz_rproc_check_running(struct platform_device *pdev,
 		if (IS_ERR(ddr_cr8_base))
 			return PTR_ERR(ddr_cr8_base);
 
-		if (ioread32(ddr_cr8_base) != 0) {
+		if (ioread32(ddr_cr8_base) != 0 &&
+		    rzv2h_cr8_core_released(pdata)) {
 			*running = true;
 			/* The running core holds a cluster reference until stopped */
 			guard(mutex)(&rzv2h_cr8_cluster_lock);
@@ -1161,6 +1207,18 @@ static int rz_rproc_probe(struct platform_device *pdev)
 	if (data->variant == RZ_VARIANT_RZV2H)
 		of_property_read_u32_index(np, "renesas,rz-core", 0,
 					   &pdata->core);
+
+	if (rz_rproc_is_cr8(pdata)) {
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+						   "cr8_ddr2");
+		if (res && res->start <= RZV2H_SECURE_DRAM_END &&
+		    res->end >= RZV2H_SECURE_DRAM_START) {
+			dev_err(dev, "cr8_ddr2 %pR overlaps secure DRAM 0x%x-0x%x\n",
+				res, RZV2H_SECURE_DRAM_START,
+				RZV2H_SECURE_DRAM_END);
+			return -EINVAL;
+		}
+	}
 
 	/* RZ/G2L requests memory regions explicitly */
 	if (data->needs_mem_region_request) {
